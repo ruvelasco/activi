@@ -1959,6 +1959,30 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
     }
   }
 
+  Future<pw.MemoryImage?> _fetchNetworkImageForPdf(String url) async {
+    try {
+      final response = await http.get(
+        Uri.parse(url),
+        headers: const {
+          // Algunos servidores (p. ej. SoyVisual) bloquean el user-agent por defecto de Dart
+          'User-Agent': 'Mozilla/5.0 (compatible; ArasaacActivities/1.0)',
+          'Accept': 'image/*,*/*',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        return pw.MemoryImage(response.bodyBytes);
+      }
+
+      debugPrint(
+        'No se pudo descargar imagen ($url), status: ${response.statusCode}',
+      );
+    } catch (e) {
+      debugPrint('Error descargando imagen $url: $e');
+    }
+    return null;
+  }
+
   Future<void> _generatePDF() async {
     // Verificar si hay al menos una página con contenido
     final hasContent = _pages.any((page) => page.isNotEmpty);
@@ -2126,10 +2150,8 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
             );
           } else if (element.type == CanvasElementType.pictogramCard) {
             // Tarjeta de pictograma (imagen + texto)
-            final response = await http.get(Uri.parse(element.imageUrl!));
-            if (response.statusCode == 200) {
-              final imageBytes = response.bodyBytes;
-              final image = pw.MemoryImage(imageBytes);
+            final image = await _fetchNetworkImageForPdf(element.imageUrl!);
+            if (image != null) {
 
               final cardWidth = (element.width ?? 150) * element.scale;
               final cardHeight = (element.height ?? 190) * element.scale;
@@ -2181,10 +2203,8 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
             }
           } else if (element.type == CanvasElementType.shadow) {
             // Sombra (imagen en negro) - en PDF se renderiza con filtro de color
-            final response = await http.get(Uri.parse(element.imageUrl!));
-            if (response.statusCode == 200) {
-              final imageBytes = response.bodyBytes;
-              final image = pw.MemoryImage(imageBytes);
+            final image = await _fetchNetworkImageForPdf(element.imageUrl!);
+            if (image != null) {
 
               widgets.add(
                 pw.Positioned(
@@ -2206,10 +2226,8 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
             }
           } else if (element.type == CanvasElementType.networkImage) {
             // Imagen de red (ARASAAC y SoyVisual)
-            final response = await http.get(Uri.parse(element.imageUrl!));
-            if (response.statusCode == 200) {
-              final imageBytes = response.bodyBytes;
-              final image = pw.MemoryImage(imageBytes);
+            final image = await _fetchNetworkImageForPdf(element.imageUrl!);
+            if (image != null) {
 
               final imgWidth = (element.width ?? 150) * element.scale;
 
@@ -2264,11 +2282,19 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
         );
       }
 
+      final zeroMarginFormat = (_pageOrientations[pageIndex]
+              ? PdfPageFormat.a4.landscape
+              : PdfPageFormat.a4)
+          .copyWith(
+        marginLeft: 0,
+        marginTop: 0,
+        marginRight: 0,
+        marginBottom: 0,
+      );
+
       pdf.addPage(
         pw.Page(
-          pageFormat: _pageOrientations[pageIndex]
-              ? PdfPageFormat.a4.landscape
-              : PdfPageFormat.a4,
+          pageFormat: zeroMarginFormat,
           build: (pw.Context context) {
             return pw.Stack(children: widgets);
           },
@@ -3366,8 +3392,9 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
   }
 
   Widget _buildSidebarPanel() {
-    // Si hay un texto seleccionado, mostrar editor de texto
-    if (_selectedImageIds.length == 1 &&
+    // Si estamos en modo texto y hay un texto seleccionado, mostrar editor
+    if (_sidebarMode == SidebarMode.text &&
+        _selectedImageIds.length == 1 &&
         _canvasImages.any(
           (e) =>
               e.id == _selectedImageIds.first &&
@@ -4503,10 +4530,16 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
                     final isSheet =
                         _soyVisualCategory == SoyVisualCategory.sheets;
                     return GestureDetector(
-                      onTap: () =>
-                          _addImageToCanvas(image.image.src, fullSize: isSheet),
+                      onTap: () {
+                        if (_addAsCard) {
+                          _addPictogramCard(image.image.src, image.title);
+                        } else {
+                          _addImageToCanvas(image.image.src, fullSize: isSheet);
+                        }
+                      },
                       child: Card(
                         elevation: 2,
+                        color: _addAsCard ? Colors.green[50] : null,
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
@@ -4525,12 +4558,31 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
                             ),
                             Padding(
                               padding: const EdgeInsets.all(4.0),
-                              child: Text(
-                                image.title,
-                                style: const TextStyle(fontSize: 10),
-                                textAlign: TextAlign.center,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  if (_addAsCard)
+                                    const Icon(
+                                      Icons.credit_card,
+                                      size: 12,
+                                      color: Colors.green,
+                                    ),
+                                  if (_addAsCard) const SizedBox(width: 4),
+                                  Expanded(
+                                    child: Text(
+                                      image.title,
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: _addAsCard
+                                            ? FontWeight.bold
+                                            : FontWeight.normal,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ],
