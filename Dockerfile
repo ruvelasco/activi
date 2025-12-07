@@ -12,5 +12,7 @@ FROM node:18-alpine as runtime
 RUN npm i -g serve
 WORKDIR /app
 COPY --from=build /app/build/web ./web
-EXPOSE 3000
-CMD ["serve", "-s", "web", "-l", "3000"]
+# Railway usa $PORT, así que lo respetamos (por defecto 3000)
+ENV PORT=3000
+EXPOSE ${PORT}
+CMD ["sh", "-c", "serve -s web -l ${PORT}"]

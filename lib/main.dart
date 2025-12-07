@@ -586,16 +586,11 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
   void _addImageToCanvas(String imageUrl, {bool fullSize = false}) {
     final isLandscape = _pageOrientations[_currentPage];
     final baseWidth = isLandscape ? _a4HeightPts : _a4WidthPts;
-    final baseHeight = isLandscape ? _a4WidthPts : _a4HeightPts;
     final double targetWidth = fullSize
         ? (baseWidth - 40).clamp(100, baseWidth).toDouble()
         : 150;
-    final double? targetHeight = fullSize
-        ? (baseHeight - 40).clamp(100, baseHeight).toDouble()
-        : null;
-    final Offset initialPosition = fullSize
-        ? const Offset(20, 20)
-        : const Offset(50, 50);
+    final Offset initialPosition =
+        fullSize ? const Offset(20, 20) : const Offset(50, 50);
 
     setState(() {
       final element = CanvasImage.networkImage(
@@ -604,7 +599,7 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
         position: initialPosition,
         scale: 1.0,
         width: targetWidth,
-        height: targetHeight,
+        height: null, // dejar altura para que respete el aspecto real
       );
       _pages[_currentPage].add(element);
     });
@@ -2024,8 +2019,8 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
           : PdfPageFormat(_a4WidthPts, _a4HeightPts, marginAll: 0);
       final double pageWidth = pageFormat.width;
       final double pageHeight = pageFormat.height;
-
-      double _pdfTop(double top, double height) => pageHeight - top - height;
+      double _bottomFromCanvas(double top, double height) =>
+          pageHeight - top - height;
 
       // Fondo de página
       widgets.add(
@@ -2066,12 +2061,12 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
         final logoFile = File(_logoPath!);
         final logoBytes = await logoFile.readAsBytes();
         final logoImage = pw.MemoryImage(logoBytes);
+        final logoBottom = _bottomFromCanvas(_logoPosition.dy, _logoSize);
 
-        final logoTop = _pdfTop(_logoPosition.dy, _logoSize);
         widgets.add(
           pw.Positioned(
             left: _logoPosition.dx,
-            top: logoTop,
+            bottom: logoBottom,
             child: pw.Container(
               width: _logoSize,
               height: _logoSize,
@@ -2084,12 +2079,12 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
       if (headerText.isNotEmpty && shouldRender(_headerScope)) {
         const headerFontSize = 14.0;
         final headerHeight = headerFontSize * 1.2;
-        final headerTop = _pdfTop(10, headerHeight);
+        final headerBottom = _bottomFromCanvas(10, headerHeight);
         widgets.add(
           pw.Positioned(
             left: 20,
             right: 20,
-            top: headerTop,
+            bottom: headerBottom,
             child: pw.Text(
               headerText,
               style: const pw.TextStyle(fontSize: headerFontSize),
@@ -2101,12 +2096,12 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
       if (footerText.isNotEmpty && shouldRender(_footerScope)) {
         const footerFontSize = 12.0;
         final footerHeight = footerFontSize * 1.2;
-        final footerTop = _pdfTop(10, footerHeight);
+        final footerBottom = _bottomFromCanvas(10, footerHeight);
         widgets.add(
           pw.Positioned(
             left: 20,
             right: 20,
-            top: footerTop,
+            bottom: footerBottom,
             child: pw.Text(
               footerText,
               style: const pw.TextStyle(fontSize: footerFontSize),
@@ -2121,11 +2116,11 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
             // Elemento de texto
             final fontSize = element.fontSize * element.scale;
             final textHeight = fontSize * 1.2;
-            final top = _pdfTop(element.position.dy, textHeight);
+            final bottom = _bottomFromCanvas(element.position.dy, textHeight);
             widgets.add(
               pw.Positioned(
                 left: element.position.dx,
-                top: top,
+                bottom: bottom,
                 child: pw.SizedBox(
                   height: textHeight,
                   child: pw.Transform.rotate(
@@ -2156,12 +2151,12 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
 
             final imgWidth = (element.width ?? 150) * element.scale;
             final imgHeight = (element.height ?? 150) * element.scale;
-            final top = _pdfTop(element.position.dy, imgHeight);
+            final bottom = _bottomFromCanvas(element.position.dy, imgHeight);
 
             widgets.add(
               pw.Positioned(
                 left: element.position.dx,
-                top: top,
+                bottom: bottom,
                 child: pw.Transform.rotate(
                   angle: element.rotation,
                   child: pw.Transform(
@@ -2183,11 +2178,11 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
             // Forma geométrica
             final width = (element.width ?? 100.0) * element.scale;
             final height = (element.height ?? 100.0) * element.scale;
-            final top = _pdfTop(element.position.dy, height);
+            final bottom = _bottomFromCanvas(element.position.dy, height);
             widgets.add(
               pw.Positioned(
                 left: element.position.dx,
-                top: top,
+                bottom: bottom,
                 child: pw.Transform.rotate(
                   angle: element.rotation,
                   child: pw.CustomPaint(
@@ -2210,19 +2205,18 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
             final image = await _fetchNetworkImageForPdf(element.imageUrl!);
             if (image != null) {
               final cardWidth = (element.width ?? 150) * element.scale;
-              final cardHeight = (element.height ?? 190) * element.scale;
-              final imageHeight = cardWidth;
-              final textHeight = cardHeight - imageHeight;
-              final double top =
-                  pageHeight - element.position.dy - cardHeight;
+            final cardHeight = (element.height ?? 190) * element.scale;
+            final imageHeight = cardWidth;
+            final textHeight = cardHeight - imageHeight;
+            final bottom = _bottomFromCanvas(element.position.dy, cardHeight);
 
-              widgets.add(
-                pw.Positioned(
-                  left: element.position.dx,
-                  top: top,
-                  child: pw.SizedBox(
-                    width: cardWidth,
-                    height: cardHeight,
+            widgets.add(
+              pw.Positioned(
+                left: element.position.dx,
+                bottom: bottom,
+                child: pw.SizedBox(
+                  width: cardWidth,
+                  height: cardHeight,
                     child: pw.Transform.rotate(
                       angle: element.rotation,
                       child: pw.Transform(
@@ -2274,15 +2268,23 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
           } else if (element.type == CanvasElementType.shadow) {
             // Sombra (imagen en negro) - en PDF se renderiza con filtro de color
             final image = await _fetchNetworkImageForPdf(element.imageUrl!);
-            if (image != null) {
+          if (image != null) {
               final imgWidth = (element.width ?? 150) * element.scale;
-              final imgHeight = (element.height ?? 150) * element.scale;
-              final top = _pdfTop(element.position.dy, imgHeight);
+              final double imgHeight;
+              if (element.height != null) {
+                imgHeight = element.height! * element.scale;
+              } else {
+                final double imgWidthPx = (image.width ?? 1).toDouble();
+                final double imgHeightPx = (image.height ?? 1).toDouble();
+                final double ratio = imgHeightPx / imgWidthPx;
+                imgHeight = imgWidth * ratio;
+              }
+              final bottom = _bottomFromCanvas(element.position.dy, imgHeight);
 
               widgets.add(
                 pw.Positioned(
                   left: element.position.dx,
-                  top: top,
+                  bottom: bottom,
                   child: pw.Transform.rotate(
                     angle: element.rotation,
                     child: pw.Opacity(
@@ -2327,12 +2329,10 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
                 );
               }
 
-              final top = _pdfTop(element.position.dy, imgHeight);
-
               widgets.add(
                 pw.Positioned(
                   left: element.position.dx,
-                  top: top,
+                  bottom: _bottomFromCanvas(element.position.dy, imgHeight),
                   child: pw.SizedBox(
                     width: imgWidth,
                     height: imgHeight,
