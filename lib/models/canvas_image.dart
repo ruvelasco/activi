@@ -67,6 +67,8 @@ class CanvasImage {
     required String imageUrl,
     required Offset position,
     double scale = 1.0,
+    double? width,
+    double? height,
   }) {
     return CanvasImage(
       id: id,
@@ -74,8 +76,8 @@ class CanvasImage {
       imageUrl: imageUrl,
       position: position,
       scale: scale,
-      width: 150,
-      height: null, // Dejar null para respetar aspecto de imagen
+      width: width ?? 150,
+      height: height, // Dejar null para respetar aspecto de imagen
     );
   }
 

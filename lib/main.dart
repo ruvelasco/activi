@@ -584,12 +584,27 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
   }
 
   void _addImageToCanvas(String imageUrl, {bool fullSize = false}) {
+    final isLandscape = _pageOrientations[_currentPage];
+    final baseWidth = isLandscape ? _a4HeightPts : _a4WidthPts;
+    final baseHeight = isLandscape ? _a4WidthPts : _a4HeightPts;
+    final double targetWidth = fullSize
+        ? (baseWidth - 40).clamp(100, baseWidth).toDouble()
+        : 150;
+    final double? targetHeight = fullSize
+        ? (baseHeight - 40).clamp(100, baseHeight).toDouble()
+        : null;
+    final Offset initialPosition = fullSize
+        ? const Offset(20, 20)
+        : const Offset(50, 50);
+
     setState(() {
       final element = CanvasImage.networkImage(
         id: DateTime.now().millisecondsSinceEpoch.toString(),
         imageUrl: imageUrl,
-        position: const Offset(100, 100),
+        position: initialPosition,
         scale: 1.0,
+        width: targetWidth,
+        height: targetHeight,
       );
       _pages[_currentPage].add(element);
     });
@@ -845,8 +860,7 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
             child: const Text('Cancelar'),
           ),
           ElevatedButton(
-            onPressed: () =>
-                Navigator.of(context).pop(controller.text.trim()),
+            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
             child: const Text('Generar'),
           ),
         ],
@@ -855,9 +869,9 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
 
     if (phrase == null || phrase.isEmpty) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Buscando pictogramas...')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Buscando pictogramas...')));
 
     try {
       final result = await phrases_activity.generatePhrasesActivity(
@@ -1166,7 +1180,8 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
 
     if (config == null) return;
 
-    final instructions = config['instructions'] as List<instructions_activity.InstructionItem>;
+    final instructions =
+        config['instructions'] as List<instructions_activity.InstructionItem>;
 
     // Mostrar indicador de carga
     ScaffoldMessenger.of(context).showSnackBar(
@@ -1197,7 +1212,11 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(result.message ?? 'Actividad de instrucciones generada')),
+        SnackBar(
+          content: Text(
+            result.message ?? 'Actividad de instrucciones generada',
+          ),
+        ),
       );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -2000,12 +2019,29 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
       final pageElements = _pages[pageIndex];
       final widgets = <pw.Widget>[];
 
+      final PdfPageFormat pageFormat = _pageOrientations[pageIndex]
+          ? PdfPageFormat(_a4HeightPts, _a4WidthPts, marginAll: 0)
+          : PdfPageFormat(_a4WidthPts, _a4HeightPts, marginAll: 0);
+      final double pageWidth = pageFormat.width;
+      final double pageHeight = pageFormat.height;
+
+      double _pdfTop(double top, double height) => pageHeight - top - height;
+
       // Fondo de página
       widgets.add(
         pw.Container(
-          width: double.infinity,
-          height: double.infinity,
+          width: pageWidth,
+          height: pageHeight,
           color: PdfColor.fromInt(_pageBackgrounds[pageIndex].value),
+        ),
+      );
+
+      // Plantilla de fondo (solo grid/lineas simples)
+      widgets.add(
+        pw.Container(
+          width: pageWidth,
+          height: pageHeight,
+          child: _buildPdfTemplate(_pageTemplates[pageIndex], pageWidth, pageHeight),
         ),
       );
 
@@ -2031,10 +2067,11 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
         final logoBytes = await logoFile.readAsBytes();
         final logoImage = pw.MemoryImage(logoBytes);
 
+        final logoTop = _pdfTop(_logoPosition.dy, _logoSize);
         widgets.add(
           pw.Positioned(
             left: _logoPosition.dx,
-            top: _logoPosition.dy,
+            top: logoTop,
             child: pw.Container(
               width: _logoSize,
               height: _logoSize,
@@ -2045,23 +2082,35 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
       }
 
       if (headerText.isNotEmpty && shouldRender(_headerScope)) {
+        const headerFontSize = 14.0;
+        final headerHeight = headerFontSize * 1.2;
+        final headerTop = _pdfTop(10, headerHeight);
         widgets.add(
           pw.Positioned(
             left: 20,
             right: 20,
-            top: 10,
-            child: pw.Text(headerText, style: pw.TextStyle(fontSize: 14)),
+            top: headerTop,
+            child: pw.Text(
+              headerText,
+              style: const pw.TextStyle(fontSize: headerFontSize),
+            ),
           ),
         );
       }
 
       if (footerText.isNotEmpty && shouldRender(_footerScope)) {
+        const footerFontSize = 12.0;
+        final footerHeight = footerFontSize * 1.2;
+        final footerTop = _pdfTop(10, footerHeight);
         widgets.add(
           pw.Positioned(
             left: 20,
             right: 20,
-            bottom: 10,
-            child: pw.Text(footerText, style: pw.TextStyle(fontSize: 12)),
+            top: footerTop,
+            child: pw.Text(
+              footerText,
+              style: const pw.TextStyle(fontSize: footerFontSize),
+            ),
           ),
         );
       }
@@ -2070,23 +2119,29 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
         try {
           if (element.type == CanvasElementType.text) {
             // Elemento de texto
+            final fontSize = element.fontSize * element.scale;
+            final textHeight = fontSize * 1.2;
+            final top = _pdfTop(element.position.dy, textHeight);
             widgets.add(
               pw.Positioned(
                 left: element.position.dx,
-                top: element.position.dy,
-                child: pw.Transform.rotate(
-                  angle: element.rotation,
-                  child: pw.Transform(
-                    transform: Matrix4.diagonal3Values(
-                      element.flipHorizontal ? -1.0 : 1.0,
-                      element.flipVertical ? -1.0 : 1.0,
-                      1.0,
-                    ),
-                    child: pw.Text(
-                      element.text ?? '',
-                      style: pw.TextStyle(
-                        fontSize: element.fontSize * element.scale,
-                        color: PdfColor.fromInt(element.textColor.value),
+                top: top,
+                child: pw.SizedBox(
+                  height: textHeight,
+                  child: pw.Transform.rotate(
+                    angle: element.rotation,
+                    child: pw.Transform(
+                      transform: Matrix4.diagonal3Values(
+                        element.flipHorizontal ? -1.0 : 1.0,
+                        element.flipVertical ? -1.0 : 1.0,
+                        1.0,
+                      ),
+                      child: pw.Text(
+                        element.text ?? '',
+                        style: pw.TextStyle(
+                          fontSize: element.fontSize * element.scale,
+                          color: PdfColor.fromInt(element.textColor.value),
+                        ),
                       ),
                     ),
                   ),
@@ -2101,11 +2156,12 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
 
             final imgWidth = (element.width ?? 150) * element.scale;
             final imgHeight = (element.height ?? 150) * element.scale;
+            final top = _pdfTop(element.position.dy, imgHeight);
 
             widgets.add(
               pw.Positioned(
                 left: element.position.dx,
-                top: element.position.dy,
+                top: top,
                 child: pw.Transform.rotate(
                   angle: element.rotation,
                   child: pw.Transform(
@@ -2127,10 +2183,11 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
             // Forma geométrica
             final width = (element.width ?? 100.0) * element.scale;
             final height = (element.height ?? 100.0) * element.scale;
+            final top = _pdfTop(element.position.dy, height);
             widgets.add(
               pw.Positioned(
                 left: element.position.dx,
-                top: element.position.dy,
+                top: top,
                 child: pw.Transform.rotate(
                   angle: element.rotation,
                   child: pw.CustomPaint(
@@ -2152,50 +2209,63 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
             // Tarjeta de pictograma (imagen + texto)
             final image = await _fetchNetworkImageForPdf(element.imageUrl!);
             if (image != null) {
-
               final cardWidth = (element.width ?? 150) * element.scale;
               final cardHeight = (element.height ?? 190) * element.scale;
               final imageHeight = cardWidth;
               final textHeight = cardHeight - imageHeight;
+              final double top =
+                  pageHeight - element.position.dy - cardHeight;
 
               widgets.add(
                 pw.Positioned(
                   left: element.position.dx,
-                  top: element.position.dy,
-                  child: pw.Container(
+                  top: top,
+                  child: pw.SizedBox(
                     width: cardWidth,
                     height: cardHeight,
-                    decoration: pw.BoxDecoration(
-                      color: PdfColors.white,
-                      border: pw.Border.all(color: PdfColors.black, width: 1),
-                      borderRadius: pw.BorderRadius.circular(8),
-                    ),
-                    child: pw.Column(
-                      children: [
-                        // Imagen
-                        pw.Container(
-                          height: imageHeight,
-                          padding: const pw.EdgeInsets.all(8),
-                          child: pw.Image(image, fit: pw.BoxFit.contain),
+                    child: pw.Transform.rotate(
+                      angle: element.rotation,
+                      child: pw.Transform(
+                        transform: Matrix4.diagonal3Values(
+                          element.flipHorizontal ? -1.0 : 1.0,
+                          element.flipVertical ? -1.0 : 1.0,
+                          1.0,
                         ),
-                        // Texto
-                        pw.Container(
-                          height: textHeight,
-                          padding: const pw.EdgeInsets.symmetric(horizontal: 8),
-                          alignment: pw.Alignment.center,
-                          child: pw.Text(
-                            element.text ?? '',
-                            style: pw.TextStyle(
-                              fontSize: element.fontSize * element.scale,
-                              fontWeight: pw.FontWeight.bold,
-                              color: PdfColor.fromInt(element.textColor.value),
-                            ),
-                            textAlign: pw.TextAlign.center,
-                            maxLines: 2,
-                            overflow: pw.TextOverflow.clip,
+                        child: pw.Container(
+                          decoration: pw.BoxDecoration(
+                            color: PdfColors.white,
+                            border: pw.Border.all(color: PdfColors.black, width: 1),
+                            borderRadius: pw.BorderRadius.circular(8),
+                          ),
+                          child: pw.Column(
+                            children: [
+                              // Imagen
+                              pw.Container(
+                                height: imageHeight,
+                                padding: const pw.EdgeInsets.all(8),
+                                child: pw.Image(image, fit: pw.BoxFit.contain),
+                              ),
+                              // Texto
+                              pw.Container(
+                                height: textHeight,
+                                padding: const pw.EdgeInsets.symmetric(horizontal: 8),
+                                alignment: pw.Alignment.center,
+                                child: pw.Text(
+                                  element.text ?? '',
+                                  style: pw.TextStyle(
+                                    fontSize: element.fontSize * element.scale,
+                                    fontWeight: pw.FontWeight.bold,
+                                    color: PdfColor.fromInt(element.textColor.value),
+                                  ),
+                                  textAlign: pw.TextAlign.center,
+                                  maxLines: 2,
+                                  overflow: pw.TextOverflow.clip,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                      ],
+                      ),
                     ),
                   ),
                 ),
@@ -2205,18 +2275,21 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
             // Sombra (imagen en negro) - en PDF se renderiza con filtro de color
             final image = await _fetchNetworkImageForPdf(element.imageUrl!);
             if (image != null) {
+              final imgWidth = (element.width ?? 150) * element.scale;
+              final imgHeight = (element.height ?? 150) * element.scale;
+              final top = _pdfTop(element.position.dy, imgHeight);
 
               widgets.add(
                 pw.Positioned(
                   left: element.position.dx,
-                  top: element.position.dy,
+                  top: top,
                   child: pw.Transform.rotate(
                     angle: element.rotation,
                     child: pw.Opacity(
                       opacity: 0.3,
                       child: pw.Container(
-                        width: (element.width ?? 150) * element.scale,
-                        height: (element.height ?? 150) * element.scale,
+                        width: imgWidth,
+                        height: imgHeight,
                         child: pw.Image(image, fit: pw.BoxFit.contain),
                       ),
                     ),
@@ -2228,19 +2301,25 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
             // Imagen de red (ARASAAC y SoyVisual)
             final image = await _fetchNetworkImageForPdf(element.imageUrl!);
             if (image != null) {
+              final double imgWidth = (element.width ?? 150) * element.scale;
+              final double imgHeight;
 
-              final imgWidth = (element.width ?? 150) * element.scale;
+              if (element.height != null) {
+                imgHeight = element.height! * element.scale;
+              } else {
+                // Calcular altura manteniendo aspecto real de la imagen
+                final double imgWidthPx = (image.width ?? 1).toDouble();
+                final double imgHeightPx = (image.height ?? 1).toDouble();
+                final double ratio = imgHeightPx / imgWidthPx;
+                imgHeight = imgWidth * ratio;
+              }
 
               // Si height es null, usar SizedBox solo con width para mantener aspecto
               // Si height está definido, usar Container con ambas dimensiones
               final pw.Widget imageWidget;
               if (element.height == null) {
-                imageWidget = pw.SizedBox(
-                  width: imgWidth,
-                  child: pw.Image(image, fit: pw.BoxFit.fitWidth),
-                );
+                imageWidget = pw.Image(image, fit: pw.BoxFit.fitWidth);
               } else {
-                final imgHeight = element.height! * element.scale;
                 imageWidget = pw.Container(
                   width: imgWidth,
                   height: imgHeight,
@@ -2248,19 +2327,25 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
                 );
               }
 
+              final top = _pdfTop(element.position.dy, imgHeight);
+
               widgets.add(
                 pw.Positioned(
                   left: element.position.dx,
-                  top: element.position.dy,
-                  child: pw.Transform.rotate(
-                    angle: element.rotation,
-                    child: pw.Transform(
-                      transform: Matrix4.diagonal3Values(
-                        element.flipHorizontal ? -1.0 : 1.0,
-                        element.flipVertical ? -1.0 : 1.0,
-                        1.0,
+                  top: top,
+                  child: pw.SizedBox(
+                    width: imgWidth,
+                    height: imgHeight,
+                    child: pw.Transform.rotate(
+                      angle: element.rotation,
+                      child: pw.Transform(
+                        transform: Matrix4.diagonal3Values(
+                          element.flipHorizontal ? -1.0 : 1.0,
+                          element.flipVertical ? -1.0 : 1.0,
+                          1.0,
+                        ),
+                        child: imageWidget,
                       ),
-                      child: imageWidget,
                     ),
                   ),
                 ),
@@ -2282,21 +2367,26 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
         );
       }
 
-      final zeroMarginFormat = (_pageOrientations[pageIndex]
-              ? PdfPageFormat.a4.landscape
-              : PdfPageFormat.a4)
-          .copyWith(
-        marginLeft: 0,
-        marginTop: 0,
-        marginRight: 0,
-        marginBottom: 0,
-      );
+      final zeroMarginFormat =
+          (_pageOrientations[pageIndex]
+                  ? PdfPageFormat.a4.landscape
+                  : PdfPageFormat.a4)
+              .copyWith(
+                marginLeft: 0,
+                marginTop: 0,
+                marginRight: 0,
+                marginBottom: 0,
+              );
 
       pdf.addPage(
         pw.Page(
-          pageFormat: zeroMarginFormat,
+          pageFormat: pageFormat,
           build: (pw.Context context) {
-            return pw.Stack(children: widgets);
+            return pw.SizedBox(
+              width: pageWidth,
+              height: pageHeight,
+              child: pw.Stack(children: widgets),
+            );
           },
         ),
       );
@@ -2305,6 +2395,243 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
     await Printing.layoutPdf(
       onLayout: (PdfPageFormat format) async => pdf.save(),
     );
+  }
+
+  pw.Widget _buildPdfTemplate(TemplateType template, double width, double height) {
+    switch (template) {
+      case TemplateType.blank:
+        return pw.SizedBox(width: width, height: height);
+      case TemplateType.lined:
+        return pw.CustomPaint(
+          size: PdfPoint(width, height),
+          painter: (canvas, size) {
+            final lineSpacing = 30.0;
+            canvas
+              ..setStrokeColor(PdfColors.grey300)
+              ..setLineWidth(1);
+            for (double y = lineSpacing; y < size.y; y += lineSpacing) {
+              canvas
+                ..moveTo(0, y)
+                ..lineTo(size.x, y);
+            }
+            canvas.strokePath();
+          },
+        );
+      case TemplateType.grid:
+        return pw.CustomPaint(
+          size: PdfPoint(width, height),
+          painter: (canvas, size) {
+            final gridSpacing = 30.0;
+            canvas
+              ..setStrokeColor(PdfColors.grey300)
+              ..setLineWidth(1);
+            for (double y = gridSpacing; y < size.y; y += gridSpacing) {
+              canvas
+                ..moveTo(0, y)
+                ..lineTo(size.x, y);
+            }
+            for (double x = gridSpacing; x < size.x; x += gridSpacing) {
+              canvas
+                ..moveTo(x, 0)
+                ..lineTo(x, size.y);
+            }
+            canvas.strokePath();
+          },
+        );
+      case TemplateType.comic4:
+        return pw.CustomPaint(
+          size: PdfPoint(width, height),
+          painter: (canvas, size) {
+            final midX = size.x / 2;
+            final midY = size.y / 2;
+            final margin = 20.0;
+            canvas
+              ..setStrokeColor(PdfColors.black)
+              ..setLineWidth(3);
+            canvas
+              ..moveTo(midX, margin)
+              ..lineTo(midX, size.y - margin)
+              ..moveTo(margin, midY)
+              ..lineTo(size.x - margin, midY)
+              ..drawRect(margin, margin, size.x - 2 * margin, size.y - 2 * margin)
+              ..strokePath();
+          },
+        );
+      case TemplateType.comic6:
+        return pw.CustomPaint(
+          size: PdfPoint(width, height),
+          painter: (canvas, size) {
+            final thirdY = size.y / 3;
+            final halfX = size.x / 2;
+            final margin = 20.0;
+            canvas
+              ..setStrokeColor(PdfColors.black)
+              ..setLineWidth(3);
+            canvas
+              ..moveTo(margin, thirdY)
+              ..lineTo(size.x - margin, thirdY)
+              ..moveTo(margin, thirdY * 2)
+              ..lineTo(size.x - margin, thirdY * 2)
+              ..moveTo(halfX, margin)
+              ..lineTo(halfX, size.y - margin)
+              ..drawRect(margin, margin, size.x - 2 * margin, size.y - 2 * margin)
+              ..strokePath();
+          },
+        );
+      case TemplateType.twoColumns:
+        return pw.CustomPaint(
+          size: PdfPoint(width, height),
+          painter: (canvas, size) {
+            final midX = size.x / 2;
+            canvas
+              ..setStrokeColor(PdfColors.grey400)
+              ..setLineWidth(2)
+              ..moveTo(midX, 0)
+              ..lineTo(midX, size.y)
+              ..strokePath();
+          },
+        );
+      case TemplateType.threeColumns:
+        return pw.CustomPaint(
+          size: PdfPoint(width, height),
+          painter: (canvas, size) {
+            final thirdX = size.x / 3;
+            canvas
+              ..setStrokeColor(PdfColors.grey400)
+              ..setLineWidth(2)
+              ..moveTo(thirdX, 0)
+              ..lineTo(thirdX, size.y)
+              ..moveTo(thirdX * 2, 0)
+              ..lineTo(thirdX * 2, size.y)
+              ..strokePath();
+          },
+        );
+      case TemplateType.shadowMatching:
+        return pw.CustomPaint(
+          size: PdfPoint(width, height),
+          painter: (canvas, size) {
+            final margin = 40.0;
+            final columnWidth = (size.x - 3 * margin) / 2;
+            final rowHeight = (size.y - 2 * margin) / 5;
+            canvas
+              ..setStrokeColor(PdfColors.grey600)
+              ..setLineWidth(2)
+              ..moveTo(size.x / 2, margin)
+              ..lineTo(size.x / 2, size.y - margin);
+            canvas
+              ..setStrokeColor(PdfColors.grey300)
+              ..setLineWidth(1);
+            for (int i = 1; i < 5; i++) {
+              final y = margin + rowHeight * i;
+              canvas
+                ..moveTo(margin, y)
+                ..lineTo(size.x - margin, y);
+            }
+            canvas.strokePath();
+            final text = pw.TextStyle(
+              color: PdfColors.grey700,
+              fontSize: 16,
+              fontWeight: pw.FontWeight.bold,
+            );
+            return pw.Stack(children: [
+              pw.Positioned(
+                left: margin + columnWidth / 2 - 30,
+                top: 10,
+                child: pw.Text('IMÁGENES', style: text),
+              ),
+              pw.Positioned(
+                left: size.x / 2 + margin + columnWidth / 2 - 30,
+                top: 10,
+                child: pw.Text('SOMBRAS', style: text),
+              ),
+            ]);
+          },
+        );
+      case TemplateType.puzzle:
+        return pw.CustomPaint(
+          size: PdfPoint(width, height),
+          painter: (canvas, size) {
+            const rows = 4;
+            const cols = 4;
+            final pieceWidth = size.x / cols;
+            final pieceHeight = size.y / rows;
+            canvas
+              ..setStrokeColor(PdfColors.black)
+              ..setLineWidth(2.5);
+            for (int i = 1; i < rows; i++) {
+              canvas
+                ..moveTo(0, i * pieceHeight)
+                ..lineTo(size.x, i * pieceHeight);
+            }
+            for (int i = 1; i < cols; i++) {
+              canvas
+                ..moveTo(i * pieceWidth, 0)
+                ..lineTo(i * pieceWidth, size.y);
+            }
+            canvas
+              ..setLineWidth(4.0)
+              ..drawRect(0, 0, size.x, size.y)
+              ..strokePath();
+          },
+        );
+      case TemplateType.writingPractice:
+        return pw.CustomPaint(
+          size: PdfPoint(width, height),
+          painter: (canvas, size) {
+            final spacing = 40.0;
+            final mainLineWidth = 2.0;
+            final dashLength = 6.0;
+            final dashGap = 6.0;
+            canvas.setStrokeColor(PdfColors.grey500);
+            for (double y = spacing; y < size.y; y += spacing) {
+              // Línea superior (punteada)
+              double x = 0;
+              while (x < size.x) {
+                canvas
+                  ..moveTo(x, y - 10)
+                  ..lineTo(x + dashLength, y - 10);
+                x += dashLength + dashGap;
+              }
+              // Línea media
+              canvas
+                ..setLineWidth(1)
+                ..moveTo(0, y)
+                ..lineTo(size.x, y);
+            }
+            // Última línea base gruesa
+            canvas
+              ..setLineWidth(mainLineWidth)
+              ..moveTo(0, size.y - spacing)
+              ..lineTo(size.x, size.y - spacing)
+              ..strokePath();
+          },
+        );
+      case TemplateType.countingPractice:
+        return pw.CustomPaint(
+          size: PdfPoint(width, height),
+          painter: (canvas, size) {
+            final margin = 30.0;
+            final rowHeight = (size.y - 2 * margin) / 4;
+            final colWidth = (size.x - 2 * margin) / 5;
+            canvas
+              ..setStrokeColor(PdfColors.grey400)
+              ..setLineWidth(1.5);
+            for (int i = 0; i <= 4; i++) {
+              final y = margin + rowHeight * i;
+              canvas
+                ..moveTo(margin, y)
+                ..lineTo(size.x - margin, y);
+            }
+            for (int i = 0; i <= 5; i++) {
+              final x = margin + colWidth * i;
+              canvas
+                ..moveTo(x, margin)
+                ..lineTo(x, size.y - margin);
+            }
+            canvas.strokePath();
+          },
+        );
+    }
   }
 
   void _drawShapeOnPdfCanvas(
@@ -4266,8 +4593,8 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
               const SizedBox(height: 8),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
-                title: const Text('Añadir como tarjeta'),
-                subtitle: const Text('Incluye imagen y palabra'),
+                title: const Text('Pictograma'),
+                subtitle: const Text(''),
                 secondary: Icon(
                   _addAsCard ? Icons.credit_card : Icons.image,
                   color: _addAsCard ? Colors.green : Colors.blue,
@@ -4465,19 +4792,39 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
       children: [
         Padding(
           padding: const EdgeInsets.all(16.0),
-          child: TextField(
-            controller: _soyVisualSearchController,
-            decoration: InputDecoration(
-              hintText: 'Buscar imágenes SoyVisual... (pulsa Enter)',
-              prefixIcon: const Icon(Icons.search),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
+          child: Column(
+            children: [
+              TextField(
+                controller: _soyVisualSearchController,
+                decoration: InputDecoration(
+                  hintText: 'Buscar imágenes SoyVisual... (pulsa Enter)',
+                  prefixIcon: const Icon(Icons.search),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  filled: true,
+                  fillColor: Colors.white,
+                ),
+                onSubmitted: _searchSoyVisual,
+                textInputAction: TextInputAction.search,
               ),
-              filled: true,
-              fillColor: Colors.white,
-            ),
-            onSubmitted: _searchSoyVisual,
-            textInputAction: TextInputAction.search,
+              const SizedBox(height: 8),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('PictogramaR'),
+                subtitle: const Text(''),
+                secondary: Icon(
+                  _addAsCard ? Icons.credit_card : Icons.image,
+                  color: _addAsCard ? Colors.green : Colors.blue,
+                ),
+                value: _addAsCard,
+                onChanged: (value) {
+                  setState(() {
+                    _addAsCard = value;
+                  });
+                },
+              ),
+            ],
           ),
         ),
         Padding(
@@ -4609,7 +4956,8 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
 // Diálogo de configuración para actividad de instrucciones
 class _InstructionsConfigDialog extends StatefulWidget {
   @override
-  State<_InstructionsConfigDialog> createState() => _InstructionsConfigDialogState();
+  State<_InstructionsConfigDialog> createState() =>
+      _InstructionsConfigDialogState();
 }
 
 class _InstructionsConfigDialogState extends State<_InstructionsConfigDialog> {
@@ -4669,7 +5017,9 @@ class _InstructionsConfigDialogState extends State<_InstructionsConfigDialog> {
                           item.word = value;
                         },
                         controller: TextEditingController(text: item.word)
-                          ..selection = TextSelection.collapsed(offset: item.word.length),
+                          ..selection = TextSelection.collapsed(
+                            offset: item.word.length,
+                          ),
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -4684,14 +5034,21 @@ class _InstructionsConfigDialogState extends State<_InstructionsConfigDialog> {
                         onChanged: (value) {
                           item.quantity = int.tryParse(value) ?? 1;
                         },
-                        controller: TextEditingController(text: item.quantity.toString())
-                          ..selection = TextSelection.collapsed(offset: item.quantity.toString().length),
+                        controller:
+                            TextEditingController(
+                                text: item.quantity.toString(),
+                              )
+                              ..selection = TextSelection.collapsed(
+                                offset: item.quantity.toString().length,
+                              ),
                       ),
                     ),
                     const SizedBox(width: 8),
                     IconButton(
                       icon: const Icon(Icons.delete, color: Colors.red),
-                      onPressed: _items.length > 1 ? () => _removeItem(index) : null,
+                      onPressed: _items.length > 1
+                          ? () => _removeItem(index)
+                          : null,
                     ),
                   ],
                 ),
@@ -4713,19 +5070,23 @@ class _InstructionsConfigDialogState extends State<_InstructionsConfigDialog> {
         ),
         ElevatedButton(
           onPressed: () {
-            final validItems = _items.where((item) => item.word.trim().isNotEmpty && item.quantity > 0).toList();
+            final validItems = _items
+                .where(
+                  (item) => item.word.trim().isNotEmpty && item.quantity > 0,
+                )
+                .toList();
             if (validItems.isEmpty) return;
 
             final instructions = validItems
-                .map((item) => instructions_activity.InstructionItem(
-                      word: item.word.trim(),
-                      quantity: item.quantity,
-                    ))
+                .map(
+                  (item) => instructions_activity.InstructionItem(
+                    word: item.word.trim(),
+                    quantity: item.quantity,
+                  ),
+                )
                 .toList();
 
-            Navigator.of(context).pop({
-              'instructions': instructions,
-            });
+            Navigator.of(context).pop({'instructions': instructions});
           },
           child: const Text('Generar'),
         ),
@@ -4745,10 +5106,12 @@ class _InstructionItemConfig {
 // Diálogo de configuración para vocabulario por sílaba
 class _SyllableVocabularyConfigDialog extends StatefulWidget {
   @override
-  State<_SyllableVocabularyConfigDialog> createState() => _SyllableVocabularyConfigDialogState();
+  State<_SyllableVocabularyConfigDialog> createState() =>
+      _SyllableVocabularyConfigDialogState();
 }
 
-class _SyllableVocabularyConfigDialogState extends State<_SyllableVocabularyConfigDialog> {
+class _SyllableVocabularyConfigDialogState
+    extends State<_SyllableVocabularyConfigDialog> {
   final TextEditingController _syllableController = TextEditingController();
   String _syllablePosition = 'start';
   int _numWords = 9;
@@ -4837,7 +5200,10 @@ class _SyllableVocabularyConfigDialogState extends State<_SyllableVocabularyConf
                   width: 40,
                   child: Text(
                     _numWords.toString(),
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
                     textAlign: TextAlign.center,
                   ),
                 ),
@@ -4900,10 +5266,12 @@ class _SyllableVocabularyConfigDialogState extends State<_SyllableVocabularyConf
 // Diálogo de configuración para campo semántico
 class _SemanticFieldConfigDialog extends StatefulWidget {
   @override
-  State<_SemanticFieldConfigDialog> createState() => _SemanticFieldConfigDialogState();
+  State<_SemanticFieldConfigDialog> createState() =>
+      _SemanticFieldConfigDialogState();
 }
 
-class _SemanticFieldConfigDialogState extends State<_SemanticFieldConfigDialog> {
+class _SemanticFieldConfigDialogState
+    extends State<_SemanticFieldConfigDialog> {
   int _numImages = 15;
   bool _usePictograms = true;
 
@@ -4940,7 +5308,10 @@ class _SemanticFieldConfigDialogState extends State<_SemanticFieldConfigDialog> 
                 width: 40,
                 child: Text(
                   _numImages.toString(),
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
                   textAlign: TextAlign.center,
                 ),
               ),
@@ -4995,10 +5366,9 @@ class _SemanticFieldConfigDialogState extends State<_SemanticFieldConfigDialog> 
         ),
         ElevatedButton(
           onPressed: () {
-            Navigator.of(context).pop({
-              'numImages': _numImages,
-              'usePictograms': _usePictograms,
-            });
+            Navigator.of(
+              context,
+            ).pop({'numImages': _numImages, 'usePictograms': _usePictograms});
           },
           child: const Text('Aceptar'),
         ),
