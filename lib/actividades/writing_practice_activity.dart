@@ -68,7 +68,7 @@ GeneratedActivity generateWritingPracticeActivity({
         id: 'line1_$i',
         shapeType: ShapeType.line,
         position: Offset(xPos, lineY),
-        shapeColor: Colors.grey[300]!,
+        shapeColor: Colors.grey[500]!,
         strokeWidth: 1.0,
       ).copyWith(width: lineWidth, height: 0),
     );
@@ -88,7 +88,7 @@ GeneratedActivity generateWritingPracticeActivity({
         id: 'line3_$i',
         shapeType: ShapeType.line,
         position: Offset(xPos, lineY + 30),
-        shapeColor: Colors.grey[300]!,
+        shapeColor: Colors.grey[500]!,
         strokeWidth: 1.0,
       ).copyWith(width: lineWidth, height: 0),
     );

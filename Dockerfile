@@ -1,4 +1,4 @@
-FROM ghcr.io/cirruslabs/flutter:3.10.1 as build
+FROM ghcr.io/cirruslabs/flutter:latest as build
 
 WORKDIR /app
 COPY pubspec.* ./
