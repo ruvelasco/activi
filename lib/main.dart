@@ -202,7 +202,7 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
                 children: [
                   TextField(
                     controller: usernameController,
-                    decoration: const InputDecoration(labelText: 'Usuario'),
+                    decoration: const InputDecoration(labelText: 'Email'),
                   ),
                   TextField(
                     controller: passwordController,
@@ -354,32 +354,19 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
     });
 
     final project = _buildProjectData(name);
-    final users = await _userService.loadUsers();
-    final index = users.indexWhere((u) => u.id == _currentUser!.id);
-    if (index == -1) {
-      setState(() {
-        _isPersisting = false;
-      });
-      return;
-    }
-
-    final user = users[index];
-    final existingIndex = user.projects.indexWhere((p) => p.id == project.id);
-    final updatedProjects = List<ProjectData>.from(user.projects);
-    if (existingIndex >= 0) {
-      updatedProjects[existingIndex] = project;
-    } else {
-      updatedProjects.add(project);
-    }
-
-    final updatedUser = user.copyWith(projects: updatedProjects);
-    users[index] = updatedUser;
-    await _userService.saveUsers(users);
+    final saved = await _userService.saveProject(project);
     setState(() {
-      _currentUser = updatedUser;
-      _activeProjectId = project.id;
+      _activeProjectId = saved?.id;
       _isPersisting = false;
     });
+    if (saved == null) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Error al guardar')));
+      }
+      return;
+    }
     if (context.mounted) {
       ScaffoldMessenger.of(
         context,
@@ -393,7 +380,7 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
       return;
     }
 
-    final projects = await _userService.fetchProjects(_currentUser!.id);
+    final projects = await _userService.fetchProjects();
     if (projects.isEmpty) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -493,6 +480,7 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
   }
 
   void _logout() {
+    _userService.logout();
     setState(() {
       _currentUser = null;
       _activeProjectId = null;

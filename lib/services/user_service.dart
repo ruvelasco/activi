@@ -1,83 +1,150 @@
 import 'dart:convert';
-import 'dart:io';
+import 'dart:convert';
 
-import 'package:path_provider/path_provider.dart';
+import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/project_data.dart';
 import '../models/user_account.dart';
 
 class UserService {
-  static const _storageFile = 'users_projects.json';
+  static const _tokenKey = 'auth_token';
+  static const String _apiBaseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: 'https://actividades-production-edac.up.railway.app',
+  );
 
-  Future<File> _getStorageFile() async {
-    final dir = await getApplicationDocumentsDirectory();
-    return File('${dir.path}/$_storageFile');
+  Future<String?> _getToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_tokenKey);
   }
 
-  Future<List<UserAccount>> loadUsers() async {
-    final file = await _getStorageFile();
-    if (!await file.exists()) {
-      return [];
-    }
-    final content = await file.readAsString();
-    if (content.isEmpty) {
-      return [];
-    }
-
-    final data = jsonDecode(content) as List<dynamic>;
-    return data.map((item) => UserAccount.fromJson(item)).toList();
+  Future<void> _saveToken(String token) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_tokenKey, token);
   }
 
-  Future<void> saveUsers(List<UserAccount> users) async {
-    final file = await _getStorageFile();
-    final payload = jsonEncode(users.map((u) => u.toJson()).toList());
-    await file.writeAsString(payload, flush: true);
+  Future<void> logout() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_tokenKey);
   }
+
+  Uri _buildUri(String path) => Uri.parse('$_apiBaseUrl$path');
 
   Future<UserAccount?> login(String username, String password) async {
-    final users = await loadUsers();
     try {
-      return users.firstWhere(
-        (u) => u.username == username && u.password == password,
+      final resp = await http.post(
+        _buildUri('/auth/login'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'email': username, 'password': password}),
       );
-    } catch (_) {
+      if (resp.statusCode != 200) return null;
+      final data = jsonDecode(resp.body) as Map<String, dynamic>;
+      final token = data['token'] as String?;
+      final userData = data['user'] as Map<String, dynamic>?;
+      if (token == null || userData == null) return null;
+      await _saveToken(token);
+      return UserAccount(
+        id: userData['id'] as String,
+        username: userData['email'] as String? ?? username,
+        password: '',
+        projects: [],
+      );
+    } catch (e) {
+      if (kDebugMode) {
+        print('Login error: $e');
+      }
       return null;
     }
   }
 
   Future<UserAccount?> register(String username, String password) async {
-    final users = await loadUsers();
-    final existing =
-        users.any((element) => element.username.toLowerCase() == username.toLowerCase());
-    if (existing) {
+    try {
+      final resp = await http.post(
+        _buildUri('/auth/register'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'email': username, 'password': password}),
+      );
+      if (resp.statusCode != 201) return null;
+      final data = jsonDecode(resp.body) as Map<String, dynamic>;
+      final token = data['token'] as String?;
+      final userData = data['user'] as Map<String, dynamic>?;
+      if (token == null || userData == null) return null;
+      await _saveToken(token);
+      return UserAccount(
+        id: userData['id'] as String,
+        username: userData['email'] as String? ?? username,
+        password: '',
+        projects: [],
+      );
+    } catch (e) {
+      if (kDebugMode) {
+        print('Register error: $e');
+      }
       return null;
     }
-
-    final newUser = UserAccount(
-      id: DateTime.now().microsecondsSinceEpoch.toString(),
-      username: username,
-      password: password,
-      projects: [],
-    );
-    users.add(newUser);
-    await saveUsers(users);
-    return newUser;
   }
 
-  Future<void> upsertUser(UserAccount user) async {
-    final users = await loadUsers();
-    final index = users.indexWhere((u) => u.id == user.id);
-    if (index >= 0) {
-      users[index] = user;
-    } else {
-      users.add(user);
+  Future<List<ProjectData>> fetchProjects() async {
+    final token = await _getToken();
+    if (token == null) return [];
+
+    try {
+      final resp = await http.get(
+        _buildUri('/projects'),
+        headers: {
+          'Authorization': 'Bearer $token',
+        },
+      );
+      if (resp.statusCode != 200) return [];
+      final data = jsonDecode(resp.body) as List<dynamic>;
+      return data.map((item) {
+        final map = item as Map<String, dynamic>;
+        final projectData = (map['data'] as Map<String, dynamic>? ?? {});
+        projectData['id'] = map['id'];
+        projectData['name'] = map['name'];
+        projectData['updatedAt'] =
+            projectData['updatedAt'] ?? map['updated_at']?.toString();
+        return ProjectData.fromJson(projectData);
+      }).toList();
+    } catch (e) {
+      if (kDebugMode) {
+        print('Fetch projects error: $e');
+      }
+      return [];
     }
-    await saveUsers(users);
   }
 
-  Future<List<ProjectData>> fetchProjects(String userId) async {
-    final users = await loadUsers();
-    final user = users.firstWhere((u) => u.id == userId, orElse: () => UserAccount(id: '', username: '', password: '', projects: []));
-    return user.projects;
+  Future<ProjectData?> saveProject(ProjectData project) async {
+    final token = await _getToken();
+    if (token == null) return null;
+    try {
+      final resp = await http.post(
+        _buildUri('/projects'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({
+          'id': project.id,
+          'name': project.name,
+          'data': project.toJson(),
+        }),
+      );
+      if (resp.statusCode != 200 && resp.statusCode != 201) return null;
+      final data = jsonDecode(resp.body) as Map<String, dynamic>;
+      final projectData = (data['data'] as Map<String, dynamic>? ?? {});
+      projectData['id'] = data['id'];
+      projectData['name'] = data['name'];
+      projectData['updatedAt'] =
+          projectData['updatedAt'] ?? data['updated_at']?.toString();
+      return ProjectData.fromJson(projectData);
+    } catch (e) {
+      if (kDebugMode) {
+        print('Save project error: $e');
+      }
+      return null;
+    }
   }
 }

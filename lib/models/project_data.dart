@@ -101,7 +101,9 @@ class ProjectData {
     return ProjectData(
       id: json['id'] as String,
       name: json['name'] as String? ?? 'Proyecto',
-      updatedAt: DateTime.tryParse(json['updatedAt'] as String? ?? '') ??
+      updatedAt: DateTime.tryParse(
+            (json['updatedAt'] ?? json['updated_at']) as String? ?? '',
+          ) ??
           DateTime.now(),
       pages: (json['pages'] as List<dynamic>? ?? [])
           .map((page) => (page as List<dynamic>)

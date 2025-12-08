@@ -5,8 +5,8 @@ COPY pubspec.* ./
 RUN flutter pub get
 COPY . .
 
-# Habilitar web y compilar
-RUN flutter config --enable-web && flutter build web --release
+# Habilitar web y compilar con la URL del API de Railway
+RUN flutter config --enable-web && flutter build web --release --dart-define=API_BASE_URL=https://actividades-production-edac.up.railway.app
 
 FROM node:18-alpine as runtime
 RUN npm i -g serve
