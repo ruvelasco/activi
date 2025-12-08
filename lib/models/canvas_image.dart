@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
 enum CanvasElementType { networkImage, localImage, text, shape, pictogramCard, shadow }
@@ -38,12 +39,14 @@ class CanvasImage {
   bool flipHorizontal;
   bool flipVertical;
   String? groupId;
+  Uint8List? webBytes; // Para web/locales en web
 
   CanvasImage({
     required this.id,
     required this.type,
     this.imageUrl,
     this.imagePath,
+    this.webBytes,
     this.text,
     this.fontSize = 24.0,
     this.textColor = Colors.black,
@@ -87,11 +90,13 @@ class CanvasImage {
     required String imagePath,
     required Offset position,
     double scale = 1.0,
+    Uint8List? webBytes,
   }) {
     return CanvasImage(
       id: id,
       type: CanvasElementType.localImage,
       imagePath: imagePath,
+      webBytes: webBytes,
       position: position,
       scale: scale,
       width: 150,
@@ -190,6 +195,7 @@ class CanvasImage {
     CanvasElementType? type,
     String? imageUrl,
     String? imagePath,
+    Uint8List? webBytes,
     String? text,
     double? fontSize,
     Color? textColor,
@@ -211,6 +217,7 @@ class CanvasImage {
       type: type ?? this.type,
       imageUrl: imageUrl ?? this.imageUrl,
       imagePath: imagePath ?? this.imagePath,
+      webBytes: webBytes ?? this.webBytes,
       text: text ?? this.text,
       fontSize: fontSize ?? this.fontSize,
       textColor: textColor ?? this.textColor,
@@ -235,6 +242,7 @@ class CanvasImage {
       'type': type.name,
       'imageUrl': imageUrl,
       'imagePath': imagePath,
+      // webBytes se omiten en persistencia para no inflar el JSON
       'text': text,
       'fontSize': fontSize,
       'textColor': textColor.value,
@@ -250,6 +258,7 @@ class CanvasImage {
       'flipHorizontal': flipHorizontal,
       'flipVertical': flipVertical,
       'groupId': groupId,
+      // webBytes se omiten en persistencia para no inflar el JSON
     };
   }
 

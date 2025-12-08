@@ -1,7 +1,9 @@
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:arasaac_activities/widgets/template_painter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -84,6 +86,10 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
   String? _activeProjectId;
   bool _isPersisting = false;
   bool _sidebarCollapsed = false;
+  static const String _arasaacCredit =
+      'Autor pictogramas: Sergio Palao. Origen: ARASAAC (http://www.arasaac.org). Licencia: CC (BY-NC-SA). Propiedad: Gobierno de Aragón (España)';
+  static const String _soyVisualCredit =
+      'Las fotografías/ láminas ilustradas utilizados a partir del API #Soyvisual son parte de una obra colectiva propiedad de la Fundación Orange y han sido creados bajo licencia Creative Commons (BY-NC-SA)';
 
   // Configuración de ARASAAC
   ArasaacConfig _arasaacConfig = const ArasaacConfig();
@@ -118,6 +124,9 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
   String? _logoPath; // Ruta del logo
   Offset _logoPosition = const Offset(20, 20); // Posición del logo
   double _logoSize = 50.0; // Tamaño del logo
+  Uint8List? _logoWebBytes; // Logo en web
+  bool _showArasaacCredit = true;
+  bool _showSoyVisualCredit = false;
   double _canvasZoom = 1.0;
   Size _canvasSize = Size.zero;
   double _viewScale = 1.0; // factor pantalla->lienzo
@@ -132,6 +141,28 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
 
   List<CanvasImage> get _canvasImages => _pages[_currentPage];
   TemplateType get _currentTemplate => _pageTemplates[_currentPage];
+
+  bool _isHttpUrl(String value) =>
+      value.startsWith('http://') || value.startsWith('https://');
+
+  Widget _buildLogoWidget() {
+    if (_logoPath == null && _logoWebBytes == null) return const SizedBox();
+
+    if (kIsWeb) {
+      if (_logoWebBytes != null) {
+        return Image.memory(_logoWebBytes!, fit: BoxFit.contain);
+      }
+      if (_logoPath != null && _isHttpUrl(_logoPath!)) {
+        return Image.network(_logoPath!, fit: BoxFit.contain);
+      }
+      return const SizedBox();
+    }
+
+    if (_logoPath != null) {
+      return Image.file(File(_logoPath!), fit: BoxFit.contain);
+    }
+    return const SizedBox();
+  }
 
   @override
   void initState() {
@@ -589,8 +620,9 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
     final double targetWidth = fullSize
         ? (baseWidth - 40).clamp(100, baseWidth).toDouble()
         : 150;
-    final Offset initialPosition =
-        fullSize ? const Offset(20, 20) : const Offset(50, 50);
+    final Offset initialPosition = fullSize
+        ? const Offset(20, 20)
+        : const Offset(50, 50);
 
     setState(() {
       final element = CanvasImage.networkImage(
@@ -1225,11 +1257,16 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
     final XFile? image = await picker.pickImage(source: ImageSource.gallery);
 
     if (image != null) {
+      Uint8List? bytes;
+      if (kIsWeb) {
+        bytes = await image.readAsBytes();
+      }
       setState(() {
         _pages[_currentPage].add(
           CanvasImage.localImage(
             id: DateTime.now().millisecondsSinceEpoch.toString(),
             imagePath: image.path,
+            webBytes: bytes,
             position: const Offset(100, 100),
             scale: 1.0,
           ),
@@ -1243,8 +1280,13 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
     final XFile? image = await picker.pickImage(source: ImageSource.gallery);
 
     if (image != null) {
+      Uint8List? bytes;
+      if (kIsWeb) {
+        bytes = await image.readAsBytes();
+      }
       setState(() {
         _logoPath = image.path;
+        _logoWebBytes = bytes;
       });
     }
   }
@@ -2036,7 +2078,11 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
         pw.Container(
           width: pageWidth,
           height: pageHeight,
-          child: _buildPdfTemplate(_pageTemplates[pageIndex], pageWidth, pageHeight),
+          child: _buildPdfTemplate(
+            _pageTemplates[pageIndex],
+            pageWidth,
+            pageHeight,
+          ),
         ),
       );
 
@@ -2145,9 +2191,18 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
             );
           } else if (element.type == CanvasElementType.localImage) {
             // Imagen local del dispositivo
-            final file = File(element.imagePath!);
-            final imageBytes = await file.readAsBytes();
-            final image = pw.MemoryImage(imageBytes);
+            pw.MemoryImage? image;
+            if (kIsWeb) {
+              if (element.webBytes != null) {
+                image = pw.MemoryImage(element.webBytes!);
+              }
+            } else {
+              final file = File(element.imagePath!);
+              final imageBytes = await file.readAsBytes();
+              image = pw.MemoryImage(imageBytes);
+            }
+
+            if (image == null) continue;
 
             final imgWidth = (element.width ?? 150) * element.scale;
             final imgHeight = (element.height ?? 150) * element.scale;
@@ -2205,18 +2260,18 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
             final image = await _fetchNetworkImageForPdf(element.imageUrl!);
             if (image != null) {
               final cardWidth = (element.width ?? 150) * element.scale;
-            final cardHeight = (element.height ?? 190) * element.scale;
-            final imageHeight = cardWidth;
-            final textHeight = cardHeight - imageHeight;
-            final bottom = _bottomFromCanvas(element.position.dy, cardHeight);
+              final cardHeight = (element.height ?? 190) * element.scale;
+              final imageHeight = cardWidth;
+              final textHeight = cardHeight - imageHeight;
+              final bottom = _bottomFromCanvas(element.position.dy, cardHeight);
 
-            widgets.add(
-              pw.Positioned(
-                left: element.position.dx,
-                bottom: bottom,
-                child: pw.SizedBox(
-                  width: cardWidth,
-                  height: cardHeight,
+              widgets.add(
+                pw.Positioned(
+                  left: element.position.dx,
+                  bottom: bottom,
+                  child: pw.SizedBox(
+                    width: cardWidth,
+                    height: cardHeight,
                     child: pw.Transform.rotate(
                       angle: element.rotation,
                       child: pw.Transform(
@@ -2228,7 +2283,10 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
                         child: pw.Container(
                           decoration: pw.BoxDecoration(
                             color: PdfColors.white,
-                            border: pw.Border.all(color: PdfColors.black, width: 1),
+                            border: pw.Border.all(
+                              color: PdfColors.black,
+                              width: 1,
+                            ),
                             borderRadius: pw.BorderRadius.circular(8),
                           ),
                           child: pw.Column(
@@ -2242,14 +2300,18 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
                               // Texto
                               pw.Container(
                                 height: textHeight,
-                                padding: const pw.EdgeInsets.symmetric(horizontal: 8),
+                                padding: const pw.EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                ),
                                 alignment: pw.Alignment.center,
                                 child: pw.Text(
                                   element.text ?? '',
                                   style: pw.TextStyle(
                                     fontSize: element.fontSize * element.scale,
                                     fontWeight: pw.FontWeight.bold,
-                                    color: PdfColor.fromInt(element.textColor.value),
+                                    color: PdfColor.fromInt(
+                                      element.textColor.value,
+                                    ),
                                   ),
                                   textAlign: pw.TextAlign.center,
                                   maxLines: 2,
@@ -2268,7 +2330,7 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
           } else if (element.type == CanvasElementType.shadow) {
             // Sombra (imagen en negro) - en PDF se renderiza con filtro de color
             final image = await _fetchNetworkImageForPdf(element.imageUrl!);
-          if (image != null) {
+            if (image != null) {
               final imgWidth = (element.width ?? 150) * element.scale;
               final double imgHeight;
               if (element.height != null) {
@@ -2367,6 +2429,44 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
         );
       }
 
+      // Créditos verticales
+      if (_showArasaacCredit) {
+        widgets.add(
+          pw.Positioned(
+            left: 6,
+            top: 0,
+            child: pw.SizedBox(
+              height: pageHeight,
+              child: pw.Transform.rotate(
+                angle: -math.pi / 2,
+                child: pw.Text(
+                  _arasaacCredit,
+                  style: pw.TextStyle(fontSize: 8, color: PdfColors.grey600),
+                ),
+              ),
+            ),
+          ),
+        );
+      }
+      if (_showSoyVisualCredit) {
+        widgets.add(
+          pw.Positioned(
+            right: 6,
+            top: 0,
+            child: pw.SizedBox(
+              height: pageHeight,
+              child: pw.Transform.rotate(
+                angle: -math.pi / 2,
+                child: pw.Text(
+                  _soyVisualCredit,
+                  style: pw.TextStyle(fontSize: 8, color: PdfColors.grey600),
+                ),
+              ),
+            ),
+          ),
+        );
+      }
+
       final zeroMarginFormat =
           (_pageOrientations[pageIndex]
                   ? PdfPageFormat.a4.landscape
@@ -2397,7 +2497,11 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
     );
   }
 
-  pw.Widget _buildPdfTemplate(TemplateType template, double width, double height) {
+  pw.Widget _buildPdfTemplate(
+    TemplateType template,
+    double width,
+    double height,
+  ) {
     switch (template) {
       case TemplateType.blank:
         return pw.SizedBox(width: width, height: height);
@@ -2453,7 +2557,12 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
               ..lineTo(midX, size.y - margin)
               ..moveTo(margin, midY)
               ..lineTo(size.x - margin, midY)
-              ..drawRect(margin, margin, size.x - 2 * margin, size.y - 2 * margin)
+              ..drawRect(
+                margin,
+                margin,
+                size.x - 2 * margin,
+                size.y - 2 * margin,
+              )
               ..strokePath();
           },
         );
@@ -2474,7 +2583,12 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
               ..lineTo(size.x - margin, thirdY * 2)
               ..moveTo(halfX, margin)
               ..lineTo(halfX, size.y - margin)
-              ..drawRect(margin, margin, size.x - 2 * margin, size.y - 2 * margin)
+              ..drawRect(
+                margin,
+                margin,
+                size.x - 2 * margin,
+                size.y - 2 * margin,
+              )
               ..strokePath();
           },
         );
@@ -2533,18 +2647,20 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
               fontSize: 16,
               fontWeight: pw.FontWeight.bold,
             );
-            return pw.Stack(children: [
-              pw.Positioned(
-                left: margin + columnWidth / 2 - 30,
-                top: 10,
-                child: pw.Text('IMÁGENES', style: text),
-              ),
-              pw.Positioned(
-                left: size.x / 2 + margin + columnWidth / 2 - 30,
-                top: 10,
-                child: pw.Text('SOMBRAS', style: text),
-              ),
-            ]);
+            return pw.Stack(
+              children: [
+                pw.Positioned(
+                  left: margin + columnWidth / 2 - 30,
+                  top: 10,
+                  child: pw.Text('IMÁGENES', style: text),
+                ),
+                pw.Positioned(
+                  left: size.x / 2 + margin + columnWidth / 2 - 30,
+                  top: 10,
+                  child: pw.Text('SOMBRAS', style: text),
+                ),
+              ],
+            );
           },
         );
       case TemplateType.puzzle:
@@ -3034,13 +3150,32 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
                                           fit: BoxFit.contain,
                                         );
                                       } else {
-                                        imageWidget = Image.file(
-                                          File(canvasElement.imagePath!),
-                                          fit: BoxFit.contain,
-                                          errorBuilder:
-                                              (context, error, stackTrace) =>
-                                                  const Icon(Icons.error),
-                                        );
+                                        if (kIsWeb) {
+                                          if (canvasElement.webBytes != null) {
+                                            imageWidget = Image.memory(
+                                              canvasElement.webBytes!,
+                                              fit: BoxFit.contain,
+                                              errorBuilder:
+                                                  (context, error, stackTrace) =>
+                                                      const Icon(Icons.error),
+                                            );
+                                          } else {
+                                            imageWidget = const Center(
+                                              child: Text(
+                                                'Imagen local no soportada en web',
+                                                style: TextStyle(fontSize: 10),
+                                              ),
+                                            );
+                                          }
+                                        } else {
+                                          imageWidget = Image.file(
+                                            File(canvasElement.imagePath!),
+                                            fit: BoxFit.contain,
+                                            errorBuilder:
+                                                (context, error, stackTrace) =>
+                                                    const Icon(Icons.error),
+                                          );
+                                        }
                                       }
 
                                       // Si solo tenemos width (láminas), usar Container sin height fijo
@@ -3169,7 +3304,7 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
                                       ),
                                     );
                                   }),
-                                  // Logo
+                                  // Logo (en web solo si es URL accesible)
                                   if (_logoPath != null)
                                     Positioned(
                                       left: _logoPosition.dx,
@@ -3195,10 +3330,7 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
                                               width: 1,
                                             ),
                                           ),
-                                          child: Image.file(
-                                            File(_logoPath!),
-                                            fit: BoxFit.contain,
-                                          ),
+                                          child: _buildLogoWidget(),
                                         ),
                                       ),
                                     ),
@@ -3254,6 +3386,43 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
                                         style: const TextStyle(
                                           fontSize: 10,
                                           color: Colors.black54,
+                                        ),
+                                      ),
+                                    ),
+                                  // Crédito ARASAAC vertical en el lateral izquierdo
+                                  if (_showArasaacCredit)
+                                    Positioned(
+                                      left: 6,
+                                      top: 0,
+                                      child: SizedBox(
+                                        height: baseHeight,
+                                        child: RotatedBox(
+                                          quarterTurns: 3,
+                                          child: Text(
+                                            _arasaacCredit,
+                                            style: const TextStyle(
+                                              fontSize: 8,
+                                              color: Colors.black54,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  if (_showSoyVisualCredit)
+                                    Positioned(
+                                      right: 6,
+                                      top: 0,
+                                      child: SizedBox(
+                                        height: baseHeight,
+                                        child: RotatedBox(
+                                          quarterTurns: 3,
+                                          child: Text(
+                                            _soyVisualCredit,
+                                            style: const TextStyle(
+                                              fontSize: 8,
+                                              color: Colors.black54,
+                                            ),
+                                          ),
                                         ),
                                       ),
                                     ),
@@ -3823,11 +3992,11 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
   }
 
   Widget _buildConfigContent() {
-    switch (_configTab) {
-      case ConfigTab.background:
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+          switch (_configTab) {
+            case ConfigTab.background:
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
             const Text(
               'Orientación de página',
               style: TextStyle(fontWeight: FontWeight.bold),
@@ -3956,6 +4125,21 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
                 },
               ),
             ],
+            const SizedBox(height: 8),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Mostrar crédito ARASAAC'),
+              subtitle: const Text('Texto lateral con autoría/licencia'),
+              value: _showArasaacCredit,
+              onChanged: (v) => setState(() => _showArasaacCredit = v),
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Mostrar crédito SoyVisual'),
+              subtitle: const Text('Para fotografías/láminas SoyVisual'),
+              value: _showSoyVisualCredit,
+              onChanged: (v) => setState(() => _showSoyVisualCredit = v),
+            ),
             const SizedBox(height: 16),
             const Text(
               'Color de fondo',
@@ -4811,7 +4995,7 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
               const SizedBox(height: 8),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
-                title: const Text('PictogramaR'),
+                title: const Text('Pictograma'),
                 subtitle: const Text(''),
                 secondary: Icon(
                   _addAsCard ? Icons.credit_card : Icons.image,
