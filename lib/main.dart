@@ -3156,8 +3156,11 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
                                               canvasElement.webBytes!,
                                               fit: BoxFit.contain,
                                               errorBuilder:
-                                                  (context, error, stackTrace) =>
-                                                      const Icon(Icons.error),
+                                                  (
+                                                    context,
+                                                    error,
+                                                    stackTrace,
+                                                  ) => const Icon(Icons.error),
                                             );
                                           } else {
                                             imageWidget = const Center(
@@ -3959,13 +3962,13 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
                         setState(() => _configTab = ConfigTab.background),
                   ),
                   ChoiceChip(
-                    label: const Text('Numerar páginas'),
+                    label: const Text('Numerar'),
                     selected: _configTab == ConfigTab.pagination,
                     onSelected: (_) =>
                         setState(() => _configTab = ConfigTab.pagination),
                   ),
                   ChoiceChip(
-                    label: const Text('Encabezado / Pie'),
+                    label: const Text('Encabezado/Pie'),
                     selected: _configTab == ConfigTab.headerFooter,
                     onSelected: (_) =>
                         setState(() => _configTab = ConfigTab.headerFooter),
@@ -3992,11 +3995,11 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
   }
 
   Widget _buildConfigContent() {
-          switch (_configTab) {
-            case ConfigTab.background:
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
+    switch (_configTab) {
+      case ConfigTab.background:
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
             const Text(
               'Orientación de página',
               style: TextStyle(fontWeight: FontWeight.bold),
