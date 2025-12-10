@@ -1,12 +1,13 @@
 FROM ghcr.io/cirruslabs/flutter:latest as build
 
+# Build Flutter web app
 WORKDIR /app
 COPY pubspec.* ./
 RUN flutter pub get
 COPY . .
 
 # Habilitar web y compilar con la URL del API de Railway
-RUN flutter config --enable-web && flutter build web --release --dart-define=API_BASE_URL=https://actividades-production-edac.up.railway.app
+RUN flutter config --enable-web && flutter build web --release --dart-define=API_BASE_URL=https://activi-production.up.railway.app
 
 FROM node:18-alpine as runtime
 RUN npm i -g serve
