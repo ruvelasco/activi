@@ -41,7 +41,7 @@ class ActivityAppBar extends StatelessWidget implements PreferredSizeWidget {
   Widget build(BuildContext context) {
     return AppBar(
       backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-      title: const Text('Creador de Actividades ARASAAC'),
+      title: const Text('Creador de Actividades ARASAAC v2.1'),
       actions: [
         IconButton(
           icon: const Icon(Icons.undo),
