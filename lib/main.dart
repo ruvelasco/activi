@@ -3487,8 +3487,8 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
                   ),
                   if (_selectedImageIds.length == 1)
                     Positioned(
-                      bottom: _editBarPosition.dy,
-                      right: MediaQuery.of(context).size.width - _editBarPosition.dx - 60,
+                      bottom: 20,
+                      right: 20,
                       child: GestureDetector(
                         onPanUpdate: (details) {
                           setState(() {
@@ -3641,8 +3641,8 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
                   // Barra de herramientas para selección múltiple
                   if (_selectedImageIds.length > 1)
                     Positioned(
-                      bottom: _editBarPosition.dy,
-                      right: MediaQuery.of(context).size.width - _editBarPosition.dx - 240,
+                      bottom: 20,
+                      right: 20,
                       child: GestureDetector(
                         onPanUpdate: (details) {
                           setState(() {
