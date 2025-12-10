@@ -192,10 +192,48 @@ app.get('/soyvisual/search', async (req, res) => {
     const response = await fetch(url.toString());
     const data = await response.json();
 
-    return res.json(data);
+    // Reemplazar URLs de imágenes para que pasen por nuestro proxy
+    const baseUrl = process.env.NODE_ENV === 'production'
+      ? 'https://activi-production.up.railway.app'
+      : `http://localhost:${port}`;
+
+    const proxyData = data.map(item => ({
+      ...item,
+      image: {
+        ...item.image,
+        src: `${baseUrl}/soyvisual/image?url=${encodeURIComponent(item.image.src)}`
+      },
+      thumbnail: {
+        ...item.thumbnail,
+        src: `${baseUrl}/soyvisual/image?url=${encodeURIComponent(item.thumbnail.src)}`
+      }
+    }));
+
+    return res.json(proxyData);
   } catch (err) {
     console.error('SoyVisual proxy error:', err);
     return res.status(500).json({ message: 'Error fetching SoyVisual data' });
+  }
+});
+
+// Proxy para imágenes de SoyVisual
+app.get('/soyvisual/image', async (req, res) => {
+  try {
+    const { url } = req.query;
+
+    if (!url) {
+      return res.status(400).json({ message: 'URL parameter required' });
+    }
+
+    const response = await fetch(url);
+    const buffer = await response.arrayBuffer();
+
+    res.set('Content-Type', response.headers.get('content-type') || 'image/jpeg');
+    res.set('Cache-Control', 'public, max-age=86400'); // Cache por 24h
+    res.send(Buffer.from(buffer));
+  } catch (err) {
+    console.error('SoyVisual image proxy error:', err);
+    return res.status(500).send('Error fetching image');
   }
 });
 

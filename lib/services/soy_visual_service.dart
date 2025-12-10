@@ -12,18 +12,21 @@ extension _SoyVisualCategoryX on SoyVisualCategory {
 class SoyVisualService {
   static const String _apiBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'https://activi-production.up.railway.app',
+    defaultValue: kDebugMode ? 'http://localhost:3000' : 'https://activi-production.up.railway.app',
   );
 
   Future<List<SoyVisualElement>> search(
     String query, {
     SoyVisualCategory category = SoyVisualCategory.photos,
   }) async {
-    if (query.isEmpty) return [];
+    // Limpiar el query de espacios y caracteres extraños
+    final cleanQuery = query.trim().replaceAll(RegExp(r'[^\w\s]'), '');
+
+    if (cleanQuery.isEmpty) return [];
 
     try {
       final params = <String, String>{
-        'query': query,
+        'query': cleanQuery,
         'type': category.apiType,
         'items_per_page': '20',
       };
