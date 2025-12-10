@@ -12,7 +12,7 @@ class UserService {
   static const _tokenKey = 'auth_token';
   static const String _apiBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'https://actividades-production-edac.up.railway.app',
+    defaultValue: 'https://activi-production.up.railway.app',
   );
 
   Future<String?> _getToken() async {
@@ -59,14 +59,28 @@ class UserService {
     }
   }
 
+  String? lastError;
+
   Future<UserAccount?> register(String username, String password) async {
+    lastError = null;
     try {
       final resp = await http.post(
         _buildUri('/auth/register'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'email': username, 'password': password}),
       );
-      if (resp.statusCode != 201) return null;
+      if (resp.statusCode != 201) {
+        try {
+          final errorData = jsonDecode(resp.body) as Map<String, dynamic>;
+          lastError = errorData['message'] as String? ?? 'Error desconocido';
+        } catch (_) {
+          lastError = 'Error en el servidor (${resp.statusCode})';
+        }
+        if (kDebugMode) {
+          print('Register failed: $lastError');
+        }
+        return null;
+      }
       final data = jsonDecode(resp.body) as Map<String, dynamic>;
       final token = data['token'] as String?;
       final userData = data['user'] as Map<String, dynamic>?;
@@ -79,6 +93,7 @@ class UserService {
         projects: [],
       );
     } catch (e) {
+      lastError = 'Error de conexión: $e';
       if (kDebugMode) {
         print('Register error: $e');
       }
