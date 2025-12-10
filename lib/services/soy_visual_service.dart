@@ -10,8 +10,10 @@ extension _SoyVisualCategoryX on SoyVisualCategory {
 }
 
 class SoyVisualService {
-  static const String resourcesUrl = 'https://www.soyvisual.org/api/v1/resources.json';
-  static const String token = '6B5165B822AE4400813CF4EC490BF6AB';
+  static const String _apiBaseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: 'https://activi-production.up.railway.app',
+  );
 
   Future<List<SoyVisualElement>> search(
     String query, {
@@ -21,17 +23,12 @@ class SoyVisualService {
 
     try {
       final params = <String, String>{
-        'token': token,
-        'items_per_page': '20',
-        'matching': 'contain',
+        'query': query,
         'type': category.apiType,
+        'items_per_page': '20',
       };
 
-      if (query.isNotEmpty) {
-        params['query'] = query;
-      }
-
-      final url = Uri.parse(resourcesUrl).replace(queryParameters: params);
+      final url = Uri.parse('$_apiBaseUrl/soyvisual/search').replace(queryParameters: params);
 
       debugPrint('SoyVisual URL: $url');
 

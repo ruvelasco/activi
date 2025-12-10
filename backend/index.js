@@ -173,6 +173,32 @@ app.delete('/projects/:id', authMiddleware, async (req, res) => {
   }
 });
 
+// Proxy para SoyVisual (evitar CORS)
+app.get('/soyvisual/search', async (req, res) => {
+  try {
+    const { query, type = 'photo', items_per_page = '20' } = req.query;
+
+    if (!query) {
+      return res.status(400).json({ message: 'Query parameter required' });
+    }
+
+    const url = new URL('https://www.soyvisual.org/api/v1/resources.json');
+    url.searchParams.set('token', '6B5165B822AE4400813CF4EC490BF6AB');
+    url.searchParams.set('query', query);
+    url.searchParams.set('type', type);
+    url.searchParams.set('items_per_page', items_per_page);
+    url.searchParams.set('matching', 'contain');
+
+    const response = await fetch(url.toString());
+    const data = await response.json();
+
+    return res.json(data);
+  } catch (err) {
+    console.error('SoyVisual proxy error:', err);
+    return res.status(500).json({ message: 'Error fetching SoyVisual data' });
+  }
+});
+
 app.listen(port, () => {
   console.log(`API listening on :${port}`);
 });

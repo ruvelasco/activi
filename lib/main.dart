@@ -130,10 +130,7 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
   double _canvasZoom = 1.0;
   Size _canvasSize = Size.zero;
   double _viewScale = 1.0; // factor pantalla->lienzo
-  Offset _editBarPosition = const Offset(
-    20,
-    20,
-  ); // Posición de la barra de edición
+  Offset _editBarPosition = const Offset(20, 20); // Posición de la barra de edición
 
   // Sistema de historial para undo/redo
   final List<List<List<CanvasImage>>> _history = [[]]; // Historial de estados
@@ -248,7 +245,11 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
                       );
                       if (newUser == null) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Usuario ya existe')),
+                          SnackBar(
+                            content: Text(
+                              _userService.lastError ?? 'Error al registrar usuario',
+                            ),
+                          ),
                         );
                         return;
                       }
@@ -1977,12 +1978,6 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
     });
   }
 
-  void _setZoom(double value) {
-    setState(() {
-      _canvasZoom = value.clamp(0.5, 2.5).toDouble();
-    });
-  }
-
   void _changeZoom(double delta) {
     setState(() {
       _canvasZoom = (_canvasZoom + delta).clamp(0.5, 2.5).toDouble();
@@ -3472,65 +3467,28 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
                                   onPressed: () => _deletePage(_currentPage),
                                   tooltip: 'Eliminar página actual',
                                 ),
+                              const VerticalDivider(),
+                              IconButton(
+                                icon: const Icon(Icons.remove),
+                                onPressed: () => _changeZoom(-0.1),
+                                tooltip: 'Alejar zoom',
+                              ),
+                              Text('${(_canvasZoom * 100).round()}%'),
+                              IconButton(
+                                icon: const Icon(Icons.add),
+                                onPressed: () => _changeZoom(0.1),
+                                tooltip: 'Acercar zoom',
+                              ),
                             ],
                           ),
                         ),
                       ),
                     ),
                   ),
-                  Positioned(
-                    bottom: 20,
-                    right: 20,
-                    child: Card(
-                      elevation: 4,
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Text(
-                              'Zoom',
-                              style: TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                IconButton(
-                                  icon: const Icon(Icons.remove),
-                                  onPressed: () => _changeZoom(-0.1),
-                                  tooltip: 'Alejar',
-                                ),
-                                SizedBox(
-                                  width: 140,
-                                  child: Slider(
-                                    value: _canvasZoom,
-                                    min: 0.5,
-                                    max: 2.5,
-                                    divisions: 20,
-                                    label: '${(_canvasZoom * 100).round()}%',
-                                    onChanged: _setZoom,
-                                  ),
-                                ),
-                                IconButton(
-                                  icon: const Icon(Icons.add),
-                                  onPressed: () => _changeZoom(0.1),
-                                  tooltip: 'Acercar',
-                                ),
-                              ],
-                            ),
-                            Text('${(_canvasZoom * 100).round()}%'),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
                   if (_selectedImageIds.length == 1)
                     Positioned(
-                      left: _editBarPosition.dx,
-                      top: _editBarPosition.dy,
+                      bottom: _editBarPosition.dy,
+                      right: MediaQuery.of(context).size.width - _editBarPosition.dx - 60,
                       child: GestureDetector(
                         onPanUpdate: (details) {
                           setState(() {
@@ -3683,8 +3641,8 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
                   // Barra de herramientas para selección múltiple
                   if (_selectedImageIds.length > 1)
                     Positioned(
-                      left: _editBarPosition.dx,
-                      top: _editBarPosition.dy,
+                      bottom: _editBarPosition.dy,
+                      right: MediaQuery.of(context).size.width - _editBarPosition.dx - 240,
                       child: GestureDetector(
                         onPanUpdate: (details) {
                           setState(() {
@@ -4972,8 +4930,13 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
               TextField(
                 controller: _soyVisualSearchController,
                 decoration: InputDecoration(
-                  hintText: 'Buscar imágenes SoyVisual... (pulsa Enter)',
+                  hintText: 'Buscar imágenes SoyVisual...',
                   prefixIcon: const Icon(Icons.search),
+                  suffixIcon: IconButton(
+                    icon: const Icon(Icons.search),
+                    onPressed: () => _searchSoyVisual(_soyVisualSearchController.text),
+                    tooltip: 'Buscar',
+                  ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
                   ),
@@ -5038,7 +5001,13 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
           child: _isSoyVisualSearching
               ? const Center(child: CircularProgressIndicator())
               : _soyVisualResults.isEmpty
-              ? const Center(child: Text('Busca imágenes de SoyVisual'))
+              ? Center(
+                  child: Text(
+                    _lastSoyVisualQuery.isEmpty
+                        ? 'Busca imágenes de SoyVisual'
+                        : 'No se encontraron resultados para "$_lastSoyVisualQuery"',
+                  ),
+                )
               : GridView.builder(
                   padding: const EdgeInsets.all(8),
                   gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
