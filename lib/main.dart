@@ -307,6 +307,29 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
     );
   }
 
+  void _newProject() {
+    setState(() {
+      _pages.clear();
+      _pageOrientations.clear();
+      _pageTemplates.clear();
+      _pageBackgrounds.clear();
+      _currentPage = 0;
+      _pages.add([]);
+      _pageOrientations.add(false);
+      _pageTemplates.add(TemplateType.blank);
+      _pageBackgrounds.add(Colors.white);
+      _activeProjectId = null;
+      _history.clear();
+      _historyIndex = -1;
+    });
+    _saveToHistory();
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Nuevo proyecto creado')),
+      );
+    }
+  }
+
   Future<void> _promptSaveProject() async {
     if (_currentUser == null) {
       _requireLogin();
@@ -3058,6 +3081,7 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
         onClear: _clearCanvas,
         onToggleSidebar: () =>
             setState(() => _sidebarCollapsed = !_sidebarCollapsed),
+        onNewProject: _newProject,
         onSaveProject: _promptSaveProject,
         onLoadProject: _showLoadProjectDialog,
         onGeneratePdf: _generatePDF,

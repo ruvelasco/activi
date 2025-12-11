@@ -11,6 +11,7 @@ class ActivityAppBar extends StatelessWidget implements PreferredSizeWidget {
   final VoidCallback onRedo;
   final VoidCallback onClear;
   final VoidCallback onToggleSidebar;
+  final VoidCallback onNewProject;
   final VoidCallback onSaveProject;
   final VoidCallback onLoadProject;
   final VoidCallback onGeneratePdf;
@@ -28,6 +29,7 @@ class ActivityAppBar extends StatelessWidget implements PreferredSizeWidget {
     required this.onRedo,
     required this.onClear,
     required this.onToggleSidebar,
+    required this.onNewProject,
     required this.onSaveProject,
     required this.onLoadProject,
     required this.onGeneratePdf,
@@ -41,7 +43,7 @@ class ActivityAppBar extends StatelessWidget implements PreferredSizeWidget {
   Widget build(BuildContext context) {
     return AppBar(
       backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-      title: const Text('Creador de Actividades ARASAAC v2.1'),
+      title: const Text('Creador de Actividades ARASAAC v2.2'),
       actions: [
         IconButton(
           icon: const Icon(Icons.undo),
@@ -57,6 +59,11 @@ class ActivityAppBar extends StatelessWidget implements PreferredSizeWidget {
           icon: const Icon(Icons.delete_sweep),
           onPressed: onClear,
           tooltip: 'Limpiar página',
+        ),
+        IconButton(
+          icon: const Icon(Icons.note_add),
+          onPressed: onNewProject,
+          tooltip: 'Nuevo proyecto',
         ),
         IconButton(
           icon: const Icon(Icons.save),
