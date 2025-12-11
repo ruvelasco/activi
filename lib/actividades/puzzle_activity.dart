@@ -14,13 +14,14 @@ class PuzzleActivityResult {
 
 /// Genera una actividad de puzle con 2 páginas
 ///
-/// - referencePage: Hoja con la imagen completa como referencia
-/// - piecesPage: Hoja con la imagen dividida en piezas 4x4 con líneas de recorte
+/// - referencePage: Hoja con la imagen en sombra (escala de grises) como referencia
+/// - piecesPage: Hoja con la imagen dividida en piezas con líneas de recorte
 PuzzleActivityResult generatePuzzleActivity({
   required List<CanvasImage> images,
   required bool isLandscape,
   required double a4WidthPts,
   required double a4HeightPts,
+  required int gridSize, // 2, 3, 4, etc. para nxn piezas
 }) {
   final selectable = images
       .where((element) =>
@@ -60,6 +61,7 @@ PuzzleActivityResult generatePuzzleActivity({
   final refX = (pageWidth - refSize) / 2;
   final refY = (pageHeight - refSize) / 2;
 
+  // Añadir imagen de referencia
   if (imageUrl != null) {
     referencePage.add(
       CanvasImage.networkImage(
@@ -77,6 +79,18 @@ PuzzleActivityResult generatePuzzleActivity({
       ).copyWith(width: refSize, height: refSize),
     );
   }
+
+  // Añadir overlay gris semi-transparente para efecto sombra
+  referencePage.add(
+    CanvasImage.shape(
+      id: 'shadow_overlay',
+      shapeType: ShapeType.rectangle,
+      position: Offset(refX, refY),
+      width: refSize,
+      height: refSize,
+      shapeColor: Colors.grey.withOpacity(0.7),
+    ),
+  );
 
   // ========== PÁGINA 2: PIEZAS RECORTABLES ==========
   final piecesPage = <CanvasImage>[];
@@ -110,9 +124,9 @@ PuzzleActivityResult generatePuzzleActivity({
     );
   }
 
-  // Añadir líneas de corte (4x4 = 16 piezas)
-  final rows = 4;
-  final cols = 4;
+  // Añadir líneas de corte (gridSize x gridSize)
+  final rows = gridSize;
+  final cols = gridSize;
   final pieceWidth = puzzleSize / cols;
   final pieceHeight = puzzleSize / rows;
 

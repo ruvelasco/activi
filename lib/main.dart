@@ -728,7 +728,7 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
     );
   }
 
-  void _generatePuzzleActivity() {
+  Future<void> _generatePuzzleActivity() async {
     final images = _canvasImages
         .where(
           (element) =>
@@ -745,11 +745,48 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
       return;
     }
 
+    // Preguntar número de piezas
+    final gridSize = await showDialog<int>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Configurar Puzzle'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Selecciona el número de piezas:'),
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (int size in [2, 3, 4, 5, 6])
+                    ElevatedButton(
+                      onPressed: () => Navigator.of(context).pop(size),
+                      child: Text('${size}x$size (${size * size} piezas)'),
+                    ),
+                ],
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancelar'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (gridSize == null) return;
+
     final result = generatePuzzleActivity(
       images: images,
       isLandscape: _pageOrientations[_currentPage],
       a4WidthPts: _a4WidthPts,
       a4HeightPts: _a4HeightPts,
+      gridSize: gridSize,
     );
 
     if (result.referencePage.isEmpty && result.piecesPage.isEmpty) return;
@@ -763,7 +800,7 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
     }
 
     setState(() {
-      // Página 1: Imagen de referencia
+      // Página 1: Imagen de referencia en sombra
       _pages[_currentPage].clear();
       _pages[_currentPage].addAll(result.referencePage);
 
@@ -775,11 +812,13 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
       }
     });
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Puzle generado (2 páginas: referencia + piezas)'),
-      ),
-    );
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Puzle ${gridSize}x$gridSize generado (2 páginas)'),
+        ),
+      );
+    }
   }
 
   void _generateWritingPracticeActivity() {
