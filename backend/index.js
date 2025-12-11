@@ -128,28 +128,26 @@ app.post('/projects', authMiddleware, async (req, res) => {
       return res.status(400).json({ message: 'Nombre y datos del proyecto son obligatorios' });
     }
 
-    if (id) {
-      const { rowCount, rows } = await pool.query(
-        `UPDATE project
-         SET name = $1, data = $2, updated_at = now()
-         WHERE id = $3 AND user_id = $4
-         RETURNING id, name, data, updated_at`,
-        [name, data, id, req.user.id],
-      );
-      if (rowCount === 0) {
-        return res.status(404).json({ message: 'Proyecto no encontrado' });
-      }
-      return res.json(rows[0]);
-    }
+    const projectId = id || uuidv4();
 
-    const newId = uuidv4();
+    // UPSERT: Insertar o actualizar si existe
     const { rows } = await pool.query(
       `INSERT INTO project (id, user_id, name, data)
        VALUES ($1, $2, $3, $4)
+       ON CONFLICT (id) DO UPDATE
+       SET name = EXCLUDED.name,
+           data = EXCLUDED.data,
+           updated_at = now()
+       WHERE project.user_id = $2
        RETURNING id, name, data, updated_at`,
-      [newId, req.user.id, name, data],
+      [projectId, req.user.id, name, data],
     );
-    return res.status(201).json(rows[0]);
+
+    if (rows.length === 0) {
+      return res.status(403).json({ message: 'No tienes permiso para modificar este proyecto' });
+    }
+
+    return res.status(id ? 200 : 201).json(rows[0]);
   } catch (err) {
     console.error('Save project error', err);
     return res.status(500).json({ message: 'Error en servidor' });
