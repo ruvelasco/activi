@@ -133,10 +133,24 @@ class UserService {
 
   Future<ProjectData?> saveProject(ProjectData project) async {
     final token = await _getToken();
-    if (token == null) return null;
+    if (kDebugMode) {
+      print('DEBUG saveProject: token = ${token != null ? "exists" : "null"}');
+    }
+    if (token == null) {
+      if (kDebugMode) {
+        print('DEBUG saveProject: No token, returning null');
+      }
+      return null;
+    }
     try {
+      final url = _buildUri('/projects');
+      if (kDebugMode) {
+        print('DEBUG saveProject: URL = $url');
+        print('DEBUG saveProject: Project ID = ${project.id}, Name = ${project.name}');
+      }
+
       final resp = await http.post(
-        _buildUri('/projects'),
+        url,
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
@@ -147,7 +161,19 @@ class UserService {
           'data': project.toJson(),
         }),
       );
-      if (resp.statusCode != 200 && resp.statusCode != 201) return null;
+
+      if (kDebugMode) {
+        print('DEBUG saveProject: Response status = ${resp.statusCode}');
+        print('DEBUG saveProject: Response body = ${resp.body}');
+      }
+
+      if (resp.statusCode != 200 && resp.statusCode != 201) {
+        if (kDebugMode) {
+          print('DEBUG saveProject: Bad status code ${resp.statusCode}, returning null');
+        }
+        return null;
+      }
+
       final data = jsonDecode(resp.body) as Map<String, dynamic>;
       final projectData = (data['data'] as Map<String, dynamic>? ?? {});
       projectData['id'] = data['id'];

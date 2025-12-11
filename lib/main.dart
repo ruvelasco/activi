@@ -28,6 +28,7 @@ import 'actividades/counting_activity.dart';
 import 'actividades/series_activity.dart' as series_activity;
 import 'actividades/symmetry_activity.dart' as symmetry_activity;
 import 'actividades/syllable_vocabulary_activity.dart' as syllable_activity;
+import 'actividades/classification_activity.dart';
 import 'actividades/semantic_field_activity.dart' as semantic_activity;
 import 'actividades/instructions_activity.dart' as instructions_activity;
 import 'actividades/phrases_activity.dart' as phrases_activity;
@@ -87,9 +88,9 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
   bool _isPersisting = false;
   bool _sidebarCollapsed = false;
   static const String _arasaacCredit =
-      'Autor pictogramas: Sergio Palao. Origen: ARASAAC (http://www.arasaac.org). Licencia: CC (BY-NC-SA). Propiedad: Gobierno de Aragón (España)';
+      '    Autor pictogramas: Sergio Palao. Origen: ARASAAC (http://www.arasaac.org). Licencia: CC (BY-NC-SA). Propiedad: Gobierno de Aragón (España)';
   static const String _soyVisualCredit =
-      'Las fotografías/ láminas ilustradas utilizados a partir del API #Soyvisual son parte de una obra colectiva propiedad de la Fundación Orange y han sido creados bajo licencia Creative Commons (BY-NC-SA)';
+      '    Las fotografías/ láminas ilustradas utilizados a partir del API #Soyvisual son parte de una obra colectiva propiedad de la Fundación Orange y han sido creados bajo licencia Creative Commons (BY-NC-SA)';
 
   // Configuración de ARASAAC
   ArasaacConfig _arasaacConfig = const ArasaacConfig();
@@ -130,14 +131,34 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
   double _canvasZoom = 1.0;
   Size _canvasSize = Size.zero;
   double _viewScale = 1.0; // factor pantalla->lienzo
-  Offset _editBarPosition = const Offset(20, 20); // Posición de la barra de edición
+  Offset _editBarPosition = const Offset(
+    20,
+    20,
+  ); // Posición de la barra de edición
 
   // Sistema de historial para undo/redo
   final List<List<List<CanvasImage>>> _history = [[]]; // Historial de estados
   int _historyIndex = 0; // Índice actual en el historial
 
-  List<CanvasImage> get _canvasImages => _pages[_currentPage];
-  TemplateType get _currentTemplate => _pageTemplates[_currentPage];
+  List<CanvasImage> get _canvasImages {
+    // Validar que _currentPage esté dentro del rango
+    if (_currentPage >= 0 && _currentPage < _pages.length) {
+      return _pages[_currentPage];
+    }
+    // Si está fuera de rango, retornar lista vacía
+    print('ADVERTENCIA: _currentPage ($_currentPage) fuera de rango. Total páginas: ${_pages.length}');
+    return [];
+  }
+
+  TemplateType get _currentTemplate {
+    // Validar que _currentPage esté dentro del rango
+    if (_currentPage >= 0 && _currentPage < _pageTemplates.length) {
+      return _pageTemplates[_currentPage];
+    }
+    // Si está fuera de rango, retornar blank
+    print('ADVERTENCIA: _currentPage ($_currentPage) fuera de rango para templates. Total: ${_pageTemplates.length}');
+    return TemplateType.blank;
+  }
 
   bool _isHttpUrl(String value) =>
       value.startsWith('http://') || value.startsWith('https://');
@@ -247,7 +268,8 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: Text(
-                              _userService.lastError ?? 'Error al registrar usuario',
+                              _userService.lastError ??
+                                  'Error al registrar usuario',
                             ),
                           ),
                         );
@@ -1056,6 +1078,131 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
     );
   }
 
+  Future<void> _generateClassificationActivity() async {
+    final images = _canvasImages
+        .where(
+          (element) =>
+              element.type == CanvasElementType.networkImage ||
+              element.type == CanvasElementType.pictogramCard,
+        )
+        .toList();
+
+    if (images.length < 2) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('Añade al menos 2 imágenes ARASAAC primero')),
+      );
+      return;
+    }
+
+    // Tomar las dos primeras imágenes como categorías
+    final categoryImages = images.take(2).toList();
+
+    // Mostrar indicador de carga
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Buscando imágenes relacionadas...')),
+    );
+
+    try {
+      // Buscar 10 imágenes relacionadas por campo semántico
+      final List<String> relatedUrls = [];
+
+      for (final catImg in categoryImages) {
+        // Extraer el ID del pictograma de la URL
+        final url = catImg.imageUrl!;
+        print('DEBUG: URL completa: $url');
+
+        // Buscar /pictograms/NÚMERO con o sin extensión
+        final match = RegExp(r'/pictograms/(\d+)').firstMatch(url);
+        if (match != null) {
+          final pictogramId = match.group(1)!;
+          print('DEBUG: ID extraído: $pictogramId');
+
+          // Buscar imágenes relacionadas (10 por cada categoría)
+          final results =
+              await _arasaacService.searchRelatedPictograms(int.parse(pictogramId));
+
+          print('DEBUG: Imágenes relacionadas encontradas: ${results.length}');
+
+          // Tomar las primeras 10 URLs de cada categoría
+          relatedUrls.addAll(
+            results.take(10).map((p) => p.imageUrl),
+          );
+        } else {
+          print('DEBUG: No se pudo extraer ID de la URL');
+        }
+      }
+
+      if (relatedUrls.length < 20) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text('No se encontraron suficientes imágenes relacionadas (${relatedUrls.length}/20)')),
+        );
+        return;
+      }
+
+      final result = generateClassificationActivity(
+        categoryImages: categoryImages,
+        relatedImageUrls: relatedUrls.take(20).toList(),
+        isLandscape: _pageOrientations[_currentPage],
+        a4WidthPts: _a4WidthPts,
+        a4HeightPts: _a4HeightPts,
+      );
+
+      print('DEBUG: Elementos en categoriesPage: ${result.categoriesPage.length}');
+      print('DEBUG: Elementos en objectsPage: ${result.objectsPage.length}');
+
+      print('DEBUG ANTES DE SETSTATE: _pages.length = ${_pages.length}');
+
+      setState(() {
+        print('DEBUG DENTRO DE SETSTATE: Preparando páginas...');
+
+        // Asegurar que existan al menos 2 páginas con todas las listas sincronizadas
+        while (_pages.length < 2) {
+          _pages.add([]);
+          _pageOrientations.add(false);
+          _pageTemplates.add(TemplateType.blank);
+          _pageBackgrounds.add(Colors.white);
+          print('DEBUG: Añadiendo página vacía. Total: ${_pages.length}');
+        }
+
+        // Limpiar el contenido de las páginas existentes
+        _pages[0].clear();
+        _pages[1].clear();
+
+        // Llenar página 1: Categorías
+        _pages[0].addAll(result.categoriesPage);
+        _pageOrientations[0] = false;
+        _pageTemplates[0] = TemplateType.blank;
+        print('DEBUG: Página 0 llenada con ${_pages[0].length} elementos');
+
+        // Llenar página 2: Objetos recortables
+        _pages[1].addAll(result.objectsPage);
+        _pageOrientations[1] = false;
+        _pageTemplates[1] = TemplateType.blank;
+        print('DEBUG: Página 1 llenada con ${_pages[1].length} elementos');
+
+        print('DEBUG: Total páginas: ${_pages.length}');
+        print('DEBUG: Elementos en página 0: ${_pages[0].length}');
+        print('DEBUG: Elementos en página 1: ${_pages[1].length}');
+
+        _currentPage = 0;
+      });
+
+      print('DEBUG DESPUÉS DE SETSTATE: _pages.length = ${_pages.length}');
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Actividad de clasificación generada (2 páginas)'),
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al generar actividad: $e')),
+      );
+    }
+  }
+
   Future<void> _generateSyllableVocabularyActivity() async {
     // Mostrar diálogo para ingresar la sílaba
     final config = await showDialog<Map<String, dynamic>>(
@@ -1340,6 +1487,33 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
     });
   }
 
+  void _toggleTextBold(String id) {
+    setState(() {
+      final index = _pages[_currentPage].indexWhere((img) => img.id == id);
+      if (index != -1) {
+        _pages[_currentPage][index].isBold = !_pages[_currentPage][index].isBold;
+      }
+    });
+  }
+
+  void _toggleTextItalic(String id) {
+    setState(() {
+      final index = _pages[_currentPage].indexWhere((img) => img.id == id);
+      if (index != -1) {
+        _pages[_currentPage][index].isItalic = !_pages[_currentPage][index].isItalic;
+      }
+    });
+  }
+
+  void _toggleTextUnderline(String id) {
+    setState(() {
+      final index = _pages[_currentPage].indexWhere((img) => img.id == id);
+      if (index != -1) {
+        _pages[_currentPage][index].isUnderline = !_pages[_currentPage][index].isUnderline;
+      }
+    });
+  }
+
   void _updateShapeColor(String id, Color newColor) {
     setState(() {
       final index = _pages[_currentPage].indexWhere((img) => img.id == id);
@@ -1379,7 +1553,7 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
       case CanvasElementType.shape:
         return element.width ?? 100.0;
       case CanvasElementType.text:
-        return 150.0;
+        return element.width ?? 300.0;
       case CanvasElementType.networkImage:
       case CanvasElementType.localImage:
         return element.width ?? 150.0;
@@ -1397,40 +1571,80 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
     final element = _pages[_currentPage][index];
     final adjustedDelta = delta / (_viewScale == 0 ? 1 : _viewScale);
 
-    if (element.type == CanvasElementType.shape) {
+    if (element.type == CanvasElementType.shape || element.type == CanvasElementType.text) {
       final minSize = 20.0;
-      double newWidth = (element.width ?? 100.0);
+      double newWidth = (element.width ?? (element.type == CanvasElementType.text ? 300.0 : 100.0));
       double newHeight = (element.height ?? 100.0);
       double newLeft = element.position.dx;
       double newTop = element.position.dy;
 
+      // Redimensionar ancho (si handle tiene componente x)
       if (handle.x < 0) {
+        // Lado izquierdo: reducir ancho y mover posición
         newWidth = (newWidth - adjustedDelta.dx).clamp(minSize, 1000.0);
         newLeft += adjustedDelta.dx;
       } else if (handle.x > 0) {
+        // Lado derecho: aumentar ancho
         newWidth = (newWidth + adjustedDelta.dx).clamp(minSize, 1000.0);
       }
 
-      if (handle.y < 0) {
-        newHeight = (newHeight - adjustedDelta.dy).clamp(minSize, 1000.0);
-        newTop += adjustedDelta.dy;
-      } else if (handle.y > 0) {
-        newHeight = (newHeight + adjustedDelta.dy).clamp(minSize, 1000.0);
+      // Redimensionar alto (si handle tiene componente y y no es texto)
+      if (element.type == CanvasElementType.shape) {
+        if (handle.y < 0) {
+          // Lado superior: reducir alto y mover posición
+          newHeight = (newHeight - adjustedDelta.dy).clamp(minSize, 1000.0);
+          newTop += adjustedDelta.dy;
+        } else if (handle.y > 0) {
+          // Lado inferior: aumentar alto
+          newHeight = (newHeight + adjustedDelta.dy).clamp(minSize, 1000.0);
+        }
       }
 
       setState(() {
         _pages[_currentPage][index].width = newWidth;
-        _pages[_currentPage][index].height = newHeight;
+        if (element.type == CanvasElementType.shape) {
+          _pages[_currentPage][index].height = newHeight;
+        }
         _pages[_currentPage][index].position = Offset(newLeft, newTop);
       });
     } else {
+      // Para otros elementos (imágenes), usar el sistema de escala
+      // Determinar si es resize proporcional (esquinas) o unidireccional (laterales)
+      final isCorner = handle.x != 0 && handle.y != 0;
       final base = _baseSizeFor(element);
-      final deltaScale = (adjustedDelta.dx + adjustedDelta.dy) / (2 * base);
 
-      setState(() {
-        final newScale = (element.scale + deltaScale).clamp(0.1, 5.0);
-        _pages[_currentPage][index].scale = newScale;
-      });
+      if (isCorner) {
+        // Resize proporcional desde esquinas
+        final deltaScale = (adjustedDelta.dx + adjustedDelta.dy) / (2 * base);
+        setState(() {
+          final newScale = (element.scale + deltaScale).clamp(0.1, 5.0);
+          _pages[_currentPage][index].scale = newScale;
+        });
+      } else {
+        // Resize unidireccional desde laterales
+        // Si la imagen no tiene height definido, usar el width como base (imágenes cuadradas)
+        final baseWidth = element.width ?? base;
+        final baseHeight = element.height ?? baseWidth;
+
+        final currentWidth = baseWidth * element.scale;
+        final currentHeight = baseHeight * element.scale;
+        double newWidth = currentWidth;
+        double newHeight = currentHeight;
+
+        if (handle.x != 0) {
+          // Lateral horizontal
+          newWidth = (currentWidth + adjustedDelta.dx * handle.x).clamp(20.0, 2000.0);
+        }
+        if (handle.y != 0) {
+          // Lateral vertical
+          newHeight = (currentHeight + adjustedDelta.dy * handle.y).clamp(20.0, 2000.0);
+        }
+
+        setState(() {
+          _pages[_currentPage][index].width = newWidth / element.scale;
+          _pages[_currentPage][index].height = newHeight / element.scale;
+        });
+      }
     }
   }
 
@@ -1973,6 +2187,18 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
 
   void _goToPage(int index) {
     setState(() {
+      // Validar que el índice esté dentro del rango
+      if (index < 0 || index >= _pages.length) {
+        print('ERROR: Índice de página fuera de rango: $index, total páginas: ${_pages.length}');
+        return;
+      }
+
+      // Asegurar que _pageOrientations tenga suficientes elementos
+      while (_pageOrientations.length <= index) {
+        _pageOrientations.add(false);
+        print('DEBUG: Añadiendo orientación para página ${_pageOrientations.length - 1}');
+      }
+
       _currentPage = index;
       _selectedImageIds.clear();
     });
@@ -2086,23 +2312,48 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
       }
 
       // Logo
-      if (_logoPath != null) {
-        final logoFile = File(_logoPath!);
-        final logoBytes = await logoFile.readAsBytes();
-        final logoImage = pw.MemoryImage(logoBytes);
-        final logoBottom = _bottomFromCanvas(_logoPosition.dy, _logoSize);
+      if (_logoPath != null || _logoWebBytes != null) {
+        try {
+          pw.MemoryImage? logoImage;
 
-        widgets.add(
-          pw.Positioned(
-            left: _logoPosition.dx,
-            bottom: logoBottom,
-            child: pw.Container(
-              width: _logoSize,
-              height: _logoSize,
-              child: pw.Image(logoImage, fit: pw.BoxFit.contain),
-            ),
-          ),
-        );
+          if (kIsWeb) {
+            // En web, usar _logoWebBytes si está disponible
+            if (_logoWebBytes != null) {
+              logoImage = pw.MemoryImage(_logoWebBytes!);
+            } else if (_logoPath != null && _isHttpUrl(_logoPath!)) {
+              // Si es una URL, intentar descargarla
+              final response = await http.get(Uri.parse(_logoPath!));
+              if (response.statusCode == 200) {
+                logoImage = pw.MemoryImage(response.bodyBytes);
+              }
+            }
+          } else {
+            // En móvil/escritorio, leer desde el archivo
+            if (_logoPath != null) {
+              final logoFile = File(_logoPath!);
+              final logoBytes = await logoFile.readAsBytes();
+              logoImage = pw.MemoryImage(logoBytes);
+            }
+          }
+
+          if (logoImage != null) {
+            final logoBottom = _bottomFromCanvas(_logoPosition.dy, _logoSize);
+            widgets.add(
+              pw.Positioned(
+                left: _logoPosition.dx,
+                bottom: logoBottom,
+                child: pw.Container(
+                  width: _logoSize,
+                  height: _logoSize,
+                  child: pw.Image(logoImage, fit: pw.BoxFit.contain),
+                ),
+              ),
+            );
+          }
+        } catch (e) {
+          print('Error al cargar logo para PDF: $e');
+          // Continuar sin el logo si hay error
+        }
       }
 
       if (headerText.isNotEmpty && shouldRender(_headerScope)) {
@@ -2143,28 +2394,30 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
         try {
           if (element.type == CanvasElementType.text) {
             // Elemento de texto
-            final fontSize = element.fontSize * element.scale;
-            final textHeight = fontSize * 1.2;
-            final bottom = _bottomFromCanvas(element.position.dy, textHeight);
+            final textWidth = (element.width ?? 300.0) * element.scale;
             widgets.add(
               pw.Positioned(
                 left: element.position.dx,
-                bottom: bottom,
-                child: pw.SizedBox(
-                  height: textHeight,
-                  child: pw.Transform.rotate(
-                    angle: element.rotation,
-                    child: pw.Transform(
-                      transform: Matrix4.diagonal3Values(
-                        element.flipHorizontal ? -1.0 : 1.0,
-                        element.flipVertical ? -1.0 : 1.0,
-                        1.0,
-                      ),
+                top: element.position.dy,
+                child: pw.Transform.rotate(
+                  angle: element.rotation,
+                  child: pw.Transform(
+                    transform: Matrix4.diagonal3Values(
+                      element.flipHorizontal ? -1.0 : 1.0,
+                      element.flipVertical ? -1.0 : 1.0,
+                      1.0,
+                    ),
+                    child: pw.Container(
+                      width: textWidth,
+                      padding: const pw.EdgeInsets.all(8),
                       child: pw.Text(
                         element.text ?? '',
                         style: pw.TextStyle(
-                          fontSize: element.fontSize * element.scale,
+                          fontSize: element.fontSize,
                           color: PdfColor.fromInt(element.textColor.value),
+                          fontWeight: element.isBold ? pw.FontWeight.bold : pw.FontWeight.normal,
+                          fontStyle: element.isItalic ? pw.FontStyle.italic : pw.FontStyle.normal,
+                          decoration: element.isUnderline ? pw.TextDecoration.underline : pw.TextDecoration.none,
                         ),
                       ),
                     ),
@@ -2416,15 +2669,17 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
       if (_showArasaacCredit) {
         widgets.add(
           pw.Positioned(
-            left: 6,
-            top: 0,
-            child: pw.SizedBox(
-              height: pageHeight,
-              child: pw.Transform.rotate(
-                angle: -math.pi / 2,
+            left: 15,
+            bottom: 10,
+            child: pw.Transform.rotate(
+              angle: math.pi / 2,
+              alignment: pw.Alignment.bottomLeft,
+              child: pw.SizedBox(
+                width: pageHeight - 20,
                 child: pw.Text(
                   _arasaacCredit,
                   style: pw.TextStyle(fontSize: 8, color: PdfColors.grey600),
+                  textAlign: pw.TextAlign.center,
                 ),
               ),
             ),
@@ -2434,15 +2689,17 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
       if (_showSoyVisualCredit) {
         widgets.add(
           pw.Positioned(
-            right: 6,
-            top: 0,
-            child: pw.SizedBox(
-              height: pageHeight,
-              child: pw.Transform.rotate(
-                angle: -math.pi / 2,
+            left: pageWidth - 15,
+            bottom: 10,
+            child: pw.Transform.rotate(
+              angle: math.pi / 2,
+              alignment: pw.Alignment.bottomLeft,
+              child: pw.SizedBox(
+                width: pageHeight - 20,
                 child: pw.Text(
                   _soyVisualCredit,
                   style: pw.TextStyle(fontSize: 8, color: PdfColors.grey600),
+                  textAlign: pw.TextAlign.center,
                 ),
               ),
             ),
@@ -2928,7 +3185,9 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
 
                                     if (canvasElement.type ==
                                         CanvasElementType.text) {
+                                      final textWidth = (canvasElement.width ?? 300.0) * canvasElement.scale;
                                       content = Container(
+                                        width: textWidth,
                                         padding: const EdgeInsets.all(8),
                                         decoration: BoxDecoration(
                                           border: isSelected
@@ -2941,12 +3200,12 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
                                         child: Text(
                                           canvasElement.text ?? '',
                                           style: TextStyle(
-                                            fontSize:
-                                                canvasElement.fontSize *
-                                                canvasElement.scale,
+                                            fontSize: canvasElement.fontSize,
                                             color: canvasElement.textColor,
-                                            fontFamily:
-                                                canvasElement.fontFamily,
+                                            fontFamily: canvasElement.fontFamily,
+                                            fontWeight: canvasElement.isBold ? FontWeight.bold : FontWeight.normal,
+                                            fontStyle: canvasElement.isItalic ? FontStyle.italic : FontStyle.normal,
+                                            decoration: canvasElement.isUnderline ? TextDecoration.underline : TextDecoration.none,
                                           ),
                                         ),
                                       );
@@ -2966,6 +3225,7 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
                                           strokeWidth:
                                               canvasElement.strokeWidth,
                                           isSelected: isSelected,
+                                          isDashed: canvasElement.isDashed,
                                         ),
                                       );
                                     } else if (canvasElement.type ==
@@ -3237,21 +3497,76 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
                                         clipBehavior: Clip.none,
                                         children: [
                                           content,
-                                          _buildResizeHandle(
-                                            Alignment.topLeft,
-                                            canvasElement.id,
-                                          ),
-                                          _buildResizeHandle(
-                                            Alignment.topRight,
-                                            canvasElement.id,
-                                          ),
-                                          _buildResizeHandle(
-                                            Alignment.bottomLeft,
-                                            canvasElement.id,
-                                          ),
-                                          _buildResizeHandle(
-                                            Alignment.bottomRight,
-                                            canvasElement.id,
+                                          // Usar LayoutBuilder para obtener dimensiones reales del contenido
+                                          Positioned.fill(
+                                            child: IgnorePointer(
+                                              ignoring: false,
+                                              child: LayoutBuilder(
+                                                builder: (context, constraints) {
+                                                  final elementWidth = constraints.maxWidth;
+                                                  final elementHeight = constraints.maxHeight;
+
+                                                  return Stack(
+                                                    clipBehavior: Clip.none,
+                                                    children: [
+                                                      // Esquinas (para todos los tipos)
+                                                      _buildResizeHandle(
+                                                        Alignment.topLeft,
+                                                        canvasElement.id,
+                                                        elementWidth,
+                                                        elementHeight,
+                                                      ),
+                                                      _buildResizeHandle(
+                                                        Alignment.topRight,
+                                                        canvasElement.id,
+                                                        elementWidth,
+                                                        elementHeight,
+                                                      ),
+                                                      _buildResizeHandle(
+                                                        Alignment.bottomLeft,
+                                                        canvasElement.id,
+                                                        elementWidth,
+                                                        elementHeight,
+                                                      ),
+                                                      _buildResizeHandle(
+                                                        Alignment.bottomRight,
+                                                        canvasElement.id,
+                                                        elementWidth,
+                                                        elementHeight,
+                                                      ),
+                                                      // Laterales horizontales (para todos)
+                                                      _buildResizeHandle(
+                                                        Alignment.centerLeft,
+                                                        canvasElement.id,
+                                                        elementWidth,
+                                                        elementHeight,
+                                                      ),
+                                                      _buildResizeHandle(
+                                                        Alignment.centerRight,
+                                                        canvasElement.id,
+                                                        elementWidth,
+                                                        elementHeight,
+                                                      ),
+                                                      // Laterales verticales (solo para formas e imágenes, NO para texto)
+                                                      if (canvasElement.type != CanvasElementType.text) ...[
+                                                        _buildResizeHandle(
+                                                          Alignment.topCenter,
+                                                          canvasElement.id,
+                                                          elementWidth,
+                                                          elementHeight,
+                                                        ),
+                                                        _buildResizeHandle(
+                                                          Alignment.bottomCenter,
+                                                          canvasElement.id,
+                                                          elementWidth,
+                                                          elementHeight,
+                                                        ),
+                                                      ],
+                                                    ],
+                                                  );
+                                                },
+                                              ),
+                                            ),
                                           ),
                                         ],
                                       );
@@ -3878,6 +4193,7 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
           onInstructions: _generateInstructionsActivity,
           onPhrases: _generatePhrasesActivity,
           onCard: _generateCardActivity,
+          onClassification: _generateClassificationActivity,
         );
       case SidebarMode.photo:
         return const Center(child: Text('Foto'));
@@ -3899,7 +4215,7 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
               ),
               const SizedBox(height: 12),
               Wrap(
-                spacing: 12,
+                spacing: 10,
                 children: [
                   ChoiceChip(
                     label: const Text('Fondo'),
@@ -3914,7 +4230,7 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
                         setState(() => _configTab = ConfigTab.pagination),
                   ),
                   ChoiceChip(
-                    label: const Text('Encabezado/Pie'),
+                    label: const Text('Encabezado'),
                     selected: _configTab == ConfigTab.headerFooter,
                     onSelected: (_) =>
                         setState(() => _configTab = ConfigTab.headerFooter),
@@ -4077,15 +4393,13 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
             const SizedBox(height: 8),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
-              title: const Text('Mostrar crédito ARASAAC'),
-              subtitle: const Text('Texto lateral con autoría/licencia'),
+              title: const Text('Crédito ARASAAC'),
               value: _showArasaacCredit,
               onChanged: (v) => setState(() => _showArasaacCredit = v),
             ),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
-              title: const Text('Mostrar crédito SoyVisual'),
-              subtitle: const Text('Para fotografías/láminas SoyVisual'),
+              title: const Text('Crédito SoyVisual'),
               value: _showSoyVisualCredit,
               onChanged: (v) => setState(() => _showSoyVisualCredit = v),
             ),
@@ -4498,7 +4812,6 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
   Widget _buildTextEditorPanel() {
     final selectedId = _selectedImageIds.first;
     final selectedElement = _canvasImages.firstWhere((e) => e.id == selectedId);
-    final textController = TextEditingController(text: selectedElement.text);
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -4510,14 +4823,55 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 16),
-          TextField(
-            controller: textController,
+          TextFormField(
+            key: ValueKey(selectedId),
+            initialValue: selectedElement.text,
             decoration: const InputDecoration(
               labelText: 'Contenido',
               border: OutlineInputBorder(),
             ),
             maxLines: 5,
             onChanged: (value) => _updateText(selectedId, value),
+          ),
+          const SizedBox(height: 16),
+          const Text('Formato', style: TextStyle(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () => _toggleTextBold(selectedId),
+                  icon: const Icon(Icons.format_bold),
+                  label: const Text('Negrita'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: selectedElement.isBold ? Colors.blue : Colors.grey[300],
+                    foregroundColor: selectedElement.isBold ? Colors.white : Colors.black,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () => _toggleTextItalic(selectedId),
+                  icon: const Icon(Icons.format_italic),
+                  label: const Text('Cursiva'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: selectedElement.isItalic ? Colors.blue : Colors.grey[300],
+                    foregroundColor: selectedElement.isItalic ? Colors.white : Colors.black,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ElevatedButton.icon(
+            onPressed: () => _toggleTextUnderline(selectedId),
+            icon: const Icon(Icons.format_underline),
+            label: const Text('Subrayado'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: selectedElement.isUnderline ? Colors.blue : Colors.grey[300],
+              foregroundColor: selectedElement.isUnderline ? Colors.white : Colors.black,
+            ),
           ),
           const SizedBox(height: 16),
           const Text('Fuente', style: TextStyle(fontWeight: FontWeight.bold)),
@@ -4684,20 +5038,98 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
     );
   }
 
-  Widget _buildResizeHandle(Alignment alignment, String id) {
-    return Align(
-      alignment: alignment,
+  Widget _buildResizeHandle(Alignment alignment, String id, double elementWidth, double elementHeight) {
+    // Determinar el tipo de manejador según el alignment
+    final bool isCorner = alignment.x != 0 && alignment.y != 0;
+    final bool isHorizontal = alignment.y == 0 && alignment.x != 0;
+    final bool isVertical = alignment.x == 0 && alignment.y != 0;
+
+    Widget handleWidget;
+    double handleWidth;
+    double handleHeight;
+
+    if (isCorner) {
+      // Esquinas: círculo para redimensionamiento proporcional
+      handleWidth = 14;
+      handleHeight = 14;
+      handleWidget = Container(
+        width: handleWidth,
+        height: handleHeight,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border.all(color: Colors.blue, width: 2),
+          shape: BoxShape.circle,
+        ),
+      );
+    } else if (isHorizontal) {
+      // Laterales horizontales: rectángulo vertical para ajuste de ancho
+      handleWidth = 8;
+      handleHeight = 20;
+      handleWidget = Container(
+        width: handleWidth,
+        height: handleHeight,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border.all(color: Colors.blue, width: 2),
+          borderRadius: BorderRadius.circular(2),
+        ),
+      );
+    } else if (isVertical) {
+      // Laterales verticales: rectángulo horizontal para ajuste de alto
+      handleWidth = 20;
+      handleHeight = 8;
+      handleWidget = Container(
+        width: handleWidth,
+        height: handleHeight,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border.all(color: Colors.blue, width: 2),
+          borderRadius: BorderRadius.circular(2),
+        ),
+      );
+    } else {
+      // Fallback
+      handleWidth = 14;
+      handleHeight = 14;
+      handleWidget = Container(
+        width: handleWidth,
+        height: handleHeight,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border.all(color: Colors.blue, width: 2),
+          shape: BoxShape.circle,
+        ),
+      );
+    }
+
+    // Calcular posición basada en el alignment y el tamaño del elemento
+    double left = 0;
+    double top = 0;
+
+    // Posición horizontal
+    if (alignment.x == -1) {
+      left = -handleWidth / 2;
+    } else if (alignment.x == 0) {
+      left = (elementWidth - handleWidth) / 2;
+    } else if (alignment.x == 1) {
+      left = elementWidth - handleWidth / 2;
+    }
+
+    // Posición vertical
+    if (alignment.y == -1) {
+      top = -handleHeight / 2;
+    } else if (alignment.y == 0) {
+      top = (elementHeight - handleHeight) / 2;
+    } else if (alignment.y == 1) {
+      top = elementHeight - handleHeight / 2;
+    }
+
+    return Positioned(
+      left: left,
+      top: top,
       child: GestureDetector(
         onPanUpdate: (details) => _resizeElement(id, details.delta, alignment),
-        child: Container(
-          width: 14,
-          height: 14,
-          decoration: BoxDecoration(
-            color: Colors.white,
-            border: Border.all(color: Colors.blue, width: 2),
-            shape: BoxShape.circle,
-          ),
-        ),
+        child: handleWidget,
       ),
     );
   }
@@ -4934,7 +5366,8 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
                   prefixIcon: const Icon(Icons.search),
                   suffixIcon: IconButton(
                     icon: const Icon(Icons.search),
-                    onPressed: () => _searchSoyVisual(_soyVisualSearchController.text),
+                    onPressed: () =>
+                        _searchSoyVisual(_soyVisualSearchController.text),
                     tooltip: 'Buscar',
                   ),
                   border: OutlineInputBorder(
@@ -5527,12 +5960,14 @@ class ShapePainter extends CustomPainter {
   final Color color;
   final double strokeWidth;
   final bool isSelected;
+  final bool isDashed;
 
   ShapePainter({
     required this.shapeType,
     required this.color,
     required this.strokeWidth,
     this.isSelected = false,
+    this.isDashed = false,
   });
 
   @override
@@ -5541,6 +5976,22 @@ class ShapePainter extends CustomPainter {
       ..color = color
       ..strokeWidth = strokeWidth
       ..style = PaintingStyle.stroke;
+
+    // Aplicar estilo discontinuo si es necesario
+    if (isDashed) {
+      final dashWidth = 5.0;
+      final dashSpace = 5.0;
+
+      switch (shapeType) {
+        case ShapeType.rectangle:
+          // Dibujar rectángulo con líneas discontinuas
+          _drawDashedRect(canvas, size, paint, dashWidth, dashSpace);
+          return;
+        default:
+          // Para otras formas, usar el estilo normal por ahora
+          break;
+      }
+    }
 
     if (isSelected) {
       final selectionPaint = Paint()
@@ -5589,6 +6040,29 @@ class ShapePainter extends CustomPainter {
         trianglePath.close();
         canvas.drawPath(trianglePath, paint);
         break;
+    }
+  }
+
+  void _drawDashedRect(Canvas canvas, Size size, Paint paint, double dashWidth, double dashSpace) {
+    // Dibujar los 4 lados del rectángulo con líneas discontinuas
+    _drawDashedLine(canvas, Offset(0, 0), Offset(size.width, 0), paint, dashWidth, dashSpace); // Top
+    _drawDashedLine(canvas, Offset(size.width, 0), Offset(size.width, size.height), paint, dashWidth, dashSpace); // Right
+    _drawDashedLine(canvas, Offset(size.width, size.height), Offset(0, size.height), paint, dashWidth, dashSpace); // Bottom
+    _drawDashedLine(canvas, Offset(0, size.height), Offset(0, 0), paint, dashWidth, dashSpace); // Left
+  }
+
+  void _drawDashedLine(Canvas canvas, Offset start, Offset end, Paint paint, double dashWidth, double dashSpace) {
+    final totalDistance = (end - start).distance;
+    final dashCount = (totalDistance / (dashWidth + dashSpace)).floor();
+
+    for (int i = 0; i < dashCount; i++) {
+      final t1 = (i * (dashWidth + dashSpace)) / totalDistance;
+      final t2 = ((i * (dashWidth + dashSpace)) + dashWidth) / totalDistance;
+
+      final p1 = Offset.lerp(start, end, t1)!;
+      final p2 = Offset.lerp(start, end, t2.clamp(0.0, 1.0))!;
+
+      canvas.drawLine(p1, p2, paint);
     }
   }
 

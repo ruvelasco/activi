@@ -97,6 +97,71 @@ class ArasaacService {
     return '$baseUrl/pictograms/$id?$queryString';
   }
 
+  // Buscar pictogramas relacionados por ID
+  Future<List<ArasaacImage>> searchRelatedPictograms(int pictogramId) async {
+    try {
+      print('DEBUG ArasaacService: Buscando relacionados para ID $pictogramId');
+
+      // Obtener información del pictograma incluyendo categorías
+      final detailUrl = '$baseUrl/pictograms/${config.language}/$pictogramId';
+      print('DEBUG ArasaacService: URL de detalles: $detailUrl');
+
+      final response = await http.get(Uri.parse(detailUrl));
+
+      if (response.statusCode != 200) {
+        print('DEBUG ArasaacService: Error status ${response.statusCode}');
+        return [];
+      }
+
+      final data = json.decode(response.body);
+
+      // Obtener categorías
+      final categories = (data['categories'] as List<dynamic>?)?.cast<String>() ?? [];
+      print('DEBUG ArasaacService: Categorías encontradas: $categories');
+
+      if (categories.isEmpty) {
+        print('DEBUG ArasaacService: No hay categorías para este pictograma');
+        return [];
+      }
+
+      // Buscar pictogramas usando las categorías
+      final relatedImages = <ArasaacImage>[];
+
+      // Usar las primeras 2 categorías más específicas
+      final searchCategories = categories
+          .where((cat) => !cat.contains('core vocabulary'))
+          .take(2)
+          .toList();
+
+      print('DEBUG ArasaacService: Buscando con categorías: $searchCategories');
+
+      for (final category in searchCategories) {
+        try {
+          print('DEBUG ArasaacService: Buscando categoría "$category"');
+          final categoryResults = await searchPictograms(category);
+          print('DEBUG ArasaacService: Encontrados ${categoryResults.length} resultados para "$category"');
+
+          // Filtrar el pictograma original y tomar hasta 10 por categoría
+          final filtered = categoryResults
+              .where((img) => img.id != pictogramId)
+              .take(10)
+              .toList();
+
+          print('DEBUG ArasaacService: Añadiendo ${filtered.length} imágenes filtradas');
+          relatedImages.addAll(filtered);
+        } catch (e) {
+          print('DEBUG ArasaacService: Error buscando categoría "$category": $e');
+        }
+      }
+
+      print('DEBUG ArasaacService: Total imágenes relacionadas: ${relatedImages.length}');
+      return relatedImages;
+    } catch (e) {
+      print('DEBUG ArasaacService: Error general: $e');
+      return [];
+    }
+  }
+
   // Obtener palabras relacionadas buscando por categorías compartidas
   Future<List<String>> getRelatedWords(String word) async {
     try {

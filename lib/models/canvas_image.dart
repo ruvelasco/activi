@@ -28,9 +28,13 @@ class CanvasImage {
   double fontSize; // Para text
   Color textColor; // Para text
   String fontFamily; // Para text
+  bool isBold; // Para text
+  bool isItalic; // Para text
+  bool isUnderline; // Para text
   final ShapeType? shapeType; // Para shape
   Color shapeColor; // Para shape
   double strokeWidth; // Para shape (grosor de línea)
+  bool isDashed; // Para shape (línea discontinua)
   Offset position;
   double scale;
   double? width;
@@ -51,9 +55,13 @@ class CanvasImage {
     this.fontSize = 24.0,
     this.textColor = Colors.black,
     this.fontFamily = 'Roboto',
+    this.isBold = false,
+    this.isItalic = false,
+    this.isUnderline = false,
     this.shapeType,
     this.shapeColor = Colors.black,
     this.strokeWidth = 2.0,
+    this.isDashed = false,
     required this.position,
     this.scale = 1.0,
     this.width,
@@ -113,6 +121,10 @@ class CanvasImage {
     Color textColor = Colors.black,
     String fontFamily = 'Roboto',
     double scale = 1.0,
+    double? width,
+    bool isBold = false,
+    bool isItalic = false,
+    bool isUnderline = false,
   }) {
     return CanvasImage(
       id: id,
@@ -123,6 +135,10 @@ class CanvasImage {
       fontFamily: fontFamily,
       position: position,
       scale: scale,
+      width: width ?? 300,
+      isBold: isBold,
+      isItalic: isItalic,
+      isUnderline: isUnderline,
     );
   }
 
@@ -133,7 +149,10 @@ class CanvasImage {
     required Offset position,
     Color shapeColor = Colors.black,
     double strokeWidth = 2.0,
+    bool isDashed = false,
     double scale = 1.0,
+    double? width,
+    double? height,
   }) {
     return CanvasImage(
       id: id,
@@ -141,10 +160,11 @@ class CanvasImage {
       shapeType: shapeType,
       shapeColor: shapeColor,
       strokeWidth: strokeWidth,
+      isDashed: isDashed,
       position: position,
       scale: scale,
-      width: 100,
-      height: 100,
+      width: width ?? 100,
+      height: height ?? 100,
     );
   }
 
@@ -200,9 +220,13 @@ class CanvasImage {
     double? fontSize,
     Color? textColor,
     String? fontFamily,
+    bool? isBold,
+    bool? isItalic,
+    bool? isUnderline,
     ShapeType? shapeType,
     Color? shapeColor,
     double? strokeWidth,
+    bool? isDashed,
     Offset? position,
     double? scale,
     double? width,
@@ -222,9 +246,13 @@ class CanvasImage {
       fontSize: fontSize ?? this.fontSize,
       textColor: textColor ?? this.textColor,
       fontFamily: fontFamily ?? this.fontFamily,
+      isBold: isBold ?? this.isBold,
+      isItalic: isItalic ?? this.isItalic,
+      isUnderline: isUnderline ?? this.isUnderline,
       shapeType: shapeType ?? this.shapeType,
       shapeColor: shapeColor ?? this.shapeColor,
       strokeWidth: strokeWidth ?? this.strokeWidth,
+      isDashed: isDashed ?? this.isDashed,
       position: position ?? this.position,
       scale: scale ?? this.scale,
       width: width ?? this.width,
@@ -247,9 +275,13 @@ class CanvasImage {
       'fontSize': fontSize,
       'textColor': textColor.value,
       'fontFamily': fontFamily,
+      'isBold': isBold,
+      'isItalic': isItalic,
+      'isUnderline': isUnderline,
       'shapeType': shapeType?.name,
       'shapeColor': shapeColor.value,
       'strokeWidth': strokeWidth,
+      'isDashed': isDashed,
       'position': {'dx': position.dx, 'dy': position.dy},
       'scale': scale,
       'width': width,
@@ -275,6 +307,9 @@ class CanvasImage {
       fontSize: (json['fontSize'] as num?)?.toDouble() ?? 24.0,
       textColor: Color(json['textColor'] as int? ?? Colors.black.value),
       fontFamily: json['fontFamily'] as String? ?? 'Roboto',
+      isBold: json['isBold'] as bool? ?? false,
+      isItalic: json['isItalic'] as bool? ?? false,
+      isUnderline: json['isUnderline'] as bool? ?? false,
       shapeType: json['shapeType'] != null
           ? ShapeType.values.firstWhere(
               (e) => e.name == json['shapeType'],
@@ -283,6 +318,7 @@ class CanvasImage {
           : null,
       shapeColor: Color(json['shapeColor'] as int? ?? Colors.black.value),
       strokeWidth: (json['strokeWidth'] as num?)?.toDouble() ?? 2.0,
+      isDashed: json['isDashed'] as bool? ?? false,
       position: Offset(
         (json['position']?['dx'] as num?)?.toDouble() ?? 0.0,
         (json['position']?['dy'] as num?)?.toDouble() ?? 0.0,

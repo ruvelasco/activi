@@ -12,6 +12,7 @@ class ActivityCreatorPanel extends StatelessWidget {
   final VoidCallback onInstructions;
   final VoidCallback onPhrases;
   final VoidCallback onCard;
+  final VoidCallback onClassification;
 
   const ActivityCreatorPanel({
     super.key,
@@ -26,6 +27,7 @@ class ActivityCreatorPanel extends StatelessWidget {
     required this.onInstructions,
     required this.onPhrases,
     required this.onCard,
+    required this.onClassification,
   });
 
   @override
@@ -144,6 +146,15 @@ class ActivityCreatorPanel extends StatelessWidget {
               description:
                   'Genera una actividad con instrucciones tipo "Rodea 2 casas, 3 árboles". Los objetos aparecen distribuidos aleatoriamente con algunos distractores.',
               onPressed: onInstructions,
+            ),
+            _buildActionButton(
+              context,
+              label: 'Clasificación',
+              icon: Icons.dashboard,
+              color: Colors.cyan[700],
+              description:
+                  'Crea una actividad de clasificación en 2 hojas: una con 2 cuadrados de categorías y otra con 10 objetos relacionados para recortar y clasificar. Requiere 2 imágenes de ARASAAC en el canvas.',
+              onPressed: onClassification,
             ),
           ],
         ),
