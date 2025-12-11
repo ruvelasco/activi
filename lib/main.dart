@@ -376,13 +376,17 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
       _isPersisting = true;
     });
 
+    print('DEBUG: Intentando guardar proyecto: $name');
     final project = _buildProjectData(name);
+    print('DEBUG: Proyecto construido con ID: ${project.id}');
     final saved = await _userService.saveProject(project);
+    print('DEBUG: Resultado de saveProject: ${saved != null ? "SUCCESS" : "FAILED"}');
     setState(() {
       _activeProjectId = saved?.id;
       _isPersisting = false;
     });
     if (saved == null) {
+      print('ERROR: saveProject retornó null');
       if (context.mounted) {
         ScaffoldMessenger.of(
           context,
