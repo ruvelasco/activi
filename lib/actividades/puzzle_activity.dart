@@ -1,9 +1,22 @@
 import 'package:flutter/material.dart';
 
 import '../models/canvas_image.dart';
-import 'activity_result.dart';
 
-GeneratedActivity generatePuzzleActivity({
+class PuzzleActivityResult {
+  final List<CanvasImage> referencePage; // Página con la imagen completa de referencia
+  final List<CanvasImage> piecesPage; // Página con las piezas recortables
+
+  PuzzleActivityResult({
+    required this.referencePage,
+    required this.piecesPage,
+  });
+}
+
+/// Genera una actividad de puzle con 2 páginas
+///
+/// - referencePage: Hoja con la imagen completa como referencia
+/// - piecesPage: Hoja con la imagen dividida en piezas 4x4 con líneas de recorte
+PuzzleActivityResult generatePuzzleActivity({
   required List<CanvasImage> images,
   required bool isLandscape,
   required double a4WidthPts,
@@ -16,42 +29,143 @@ GeneratedActivity generatePuzzleActivity({
           element.type == CanvasElementType.pictogramCard)
       .toList();
 
-  if (selectable.isEmpty) return GeneratedActivity(elements: []);
+  if (selectable.isEmpty) {
+    return PuzzleActivityResult(referencePage: [], piecesPage: []);
+  }
 
   final selectedImage = selectable.first;
-  final canvasWidth = isLandscape ? a4HeightPts : a4WidthPts;
-  final canvasHeight = isLandscape ? a4WidthPts : a4HeightPts;
+  final pageWidth = isLandscape ? a4HeightPts : a4WidthPts;
+  final pageHeight = isLandscape ? a4WidthPts : a4HeightPts;
 
-  final result = <CanvasImage>[];
   String? imageUrl;
+  String? imagePath;
+
   if (selectedImage.type == CanvasElementType.pictogramCard ||
       selectedImage.type == CanvasElementType.networkImage) {
     imageUrl = selectedImage.imageUrl;
+  } else if (selectedImage.type == CanvasElementType.localImage) {
+    imagePath = selectedImage.imagePath;
   }
+
+  // ========== PÁGINA 1: IMAGEN DE REFERENCIA ==========
+  final referencePage = <CanvasImage>[];
+
+  // Tamaño de la imagen de referencia (más pequeña, centrada)
+  final margin = 80.0;
+  final refWidth = pageWidth - (margin * 2);
+  final refHeight = pageHeight - (margin * 2);
+  final refSize = refWidth < refHeight ? refWidth : refHeight;
+
+  // Centrar la imagen
+  final refX = (pageWidth - refSize) / 2;
+  final refY = (pageHeight - refSize) / 2;
 
   if (imageUrl != null) {
-    result.add(
+    referencePage.add(
       CanvasImage.networkImage(
-        id: 'puzzle_image',
+        id: 'reference_image',
         imageUrl: imageUrl,
-        position: const Offset(0, 0),
-        scale: 1.0,
-      ).copyWith(width: canvasWidth, height: canvasHeight),
+        position: Offset(refX, refY),
+      ).copyWith(width: refSize, height: refSize),
     );
-  } else if (selectedImage.imagePath != null) {
-    result.add(
+  } else if (imagePath != null) {
+    referencePage.add(
       CanvasImage.localImage(
-        id: 'puzzle_image',
-        imagePath: selectedImage.imagePath!,
-        position: const Offset(0, 0),
-        scale: 1.0,
-      ).copyWith(width: canvasWidth, height: canvasHeight),
+        id: 'reference_image',
+        imagePath: imagePath,
+        position: Offset(refX, refY),
+      ).copyWith(width: refSize, height: refSize),
     );
   }
 
-  return GeneratedActivity(
-    elements: result,
-    template: TemplateType.puzzle,
-    message: 'Puzle generado - Listo para imprimir y recortar',
+  // ========== PÁGINA 2: PIEZAS RECORTABLES ==========
+  final piecesPage = <CanvasImage>[];
+
+  // Calcular tamaño del puzzle para que quepa en la página
+  final puzzleMargin = 60.0;
+  final availableWidth = pageWidth - (puzzleMargin * 2);
+  final availableHeight = pageHeight - (puzzleMargin * 2);
+  final puzzleSize = availableWidth < availableHeight ? availableWidth : availableHeight;
+
+  // Centrar el puzzle
+  final puzzleX = (pageWidth - puzzleSize) / 2;
+  final puzzleY = (pageHeight - puzzleSize) / 2;
+
+  // Añadir la imagen completa (detrás de las líneas)
+  if (imageUrl != null) {
+    piecesPage.add(
+      CanvasImage.networkImage(
+        id: 'puzzle_base',
+        imageUrl: imageUrl,
+        position: Offset(puzzleX, puzzleY),
+      ).copyWith(width: puzzleSize, height: puzzleSize),
+    );
+  } else if (imagePath != null) {
+    piecesPage.add(
+      CanvasImage.localImage(
+        id: 'puzzle_base',
+        imagePath: imagePath,
+        position: Offset(puzzleX, puzzleY),
+      ).copyWith(width: puzzleSize, height: puzzleSize),
+    );
+  }
+
+  // Añadir líneas de corte (4x4 = 16 piezas)
+  final rows = 4;
+  final cols = 4;
+  final pieceWidth = puzzleSize / cols;
+  final pieceHeight = puzzleSize / rows;
+
+  // Líneas verticales
+  for (int i = 1; i < cols; i++) {
+    final x = puzzleX + (i * pieceWidth);
+    piecesPage.add(
+      CanvasImage.shape(
+        id: 'vline_$i',
+        shapeType: ShapeType.line,
+        position: Offset(x, puzzleY),
+        width: 0,
+        height: puzzleSize,
+        shapeColor: Colors.grey[800]!,
+        strokeWidth: 2.0,
+        isDashed: true,
+      ),
+    );
+  }
+
+  // Líneas horizontales
+  for (int i = 1; i < rows; i++) {
+    final y = puzzleY + (i * pieceHeight);
+    piecesPage.add(
+      CanvasImage.shape(
+        id: 'hline_$i',
+        shapeType: ShapeType.line,
+        position: Offset(puzzleX, y),
+        width: puzzleSize,
+        height: 0,
+        shapeColor: Colors.grey[800]!,
+        strokeWidth: 2.0,
+        isDashed: true,
+      ),
+    );
+  }
+
+  // Borde exterior con línea punteada
+  piecesPage.add(
+    CanvasImage.shape(
+      id: 'puzzle_border',
+      shapeType: ShapeType.rectangle,
+      position: Offset(puzzleX - 2, puzzleY - 2),
+      width: puzzleSize + 4,
+      height: puzzleSize + 4,
+      shapeColor: Colors.grey[800]!,
+      strokeWidth: 2.0,
+      isDashed: true,
+    ),
+  );
+
+  return PuzzleActivityResult(
+    referencePage: referencePage,
+    piecesPage: piecesPage,
   );
 }

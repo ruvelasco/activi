@@ -752,19 +752,34 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
       a4HeightPts: _a4HeightPts,
     );
 
-    if (result.elements.isEmpty) return;
+    if (result.referencePage.isEmpty && result.piecesPage.isEmpty) return;
+
+    // Sincronizar todas las listas de páginas
+    while (_pages.length < 2) {
+      _pages.add([]);
+      _pageOrientations.add(_pageOrientations[_currentPage]);
+      _pageTemplates.add(TemplateType.blank);
+      _pageBackgrounds.add(Colors.white);
+    }
 
     setState(() {
+      // Página 1: Imagen de referencia
       _pages[_currentPage].clear();
-      if (result.template != null) {
-        _pageTemplates[_currentPage] = result.template!;
+      _pages[_currentPage].addAll(result.referencePage);
+
+      // Página 2: Piezas recortables
+      final nextPage = _currentPage + 1;
+      if (nextPage < _pages.length) {
+        _pages[nextPage].clear();
+        _pages[nextPage].addAll(result.piecesPage);
       }
-      _pages[_currentPage].addAll(result.elements);
     });
 
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(result.message ?? 'Puzle generado')));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Puzle generado (2 páginas: referencia + piezas)'),
+      ),
+    );
   }
 
   void _generateWritingPracticeActivity() {
