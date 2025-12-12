@@ -25,6 +25,7 @@ import 'actividades/shadow_matching_activity.dart';
 import 'actividades/puzzle_activity.dart';
 import 'actividades/writing_practice_activity.dart';
 import 'actividades/counting_activity.dart';
+import 'actividades/phonological_awareness_activity.dart';
 import 'actividades/series_activity.dart' as series_activity;
 import 'actividades/symmetry_activity.dart' as symmetry_activity;
 import 'actividades/syllable_vocabulary_activity.dart' as syllable_activity;
@@ -896,6 +897,59 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(result.message ?? 'Actividad generada')),
     );
+  }
+
+  Future<void> _generatePhonologicalAwarenessActivity() async {
+    final images = _pages[_currentPage]
+        .where(
+          (element) =>
+              element.type == CanvasElementType.networkImage ||
+              element.type == CanvasElementType.localImage ||
+              element.type == CanvasElementType.pictogramCard,
+        )
+        .toList();
+
+    if (images.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Añade al menos una imagen de ARASAAC primero'),
+        ),
+      );
+      return;
+    }
+
+    // Mostrar indicador de carga
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Generando actividad de conciencia fonológica...'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+
+    final result = await generatePhonologicalAwarenessActivity(
+      images: images,
+      isLandscape: _pageOrientations[_currentPage],
+      a4WidthPts: _a4WidthPts,
+      a4HeightPts: _a4HeightPts,
+    );
+
+    if (result.elements.isEmpty) return;
+
+    setState(() {
+      _pages[_currentPage].clear();
+      if (result.template != null) {
+        _pageTemplates[_currentPage] = result.template!;
+      }
+      _pages[_currentPage].addAll(result.elements);
+    });
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(result.message ?? 'Actividad generada')),
+      );
+    }
   }
 
   void _generateSeriesActivity() {
@@ -4277,6 +4331,7 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
           onPuzzle: _generatePuzzleActivity,
           onWritingPractice: _generateWritingPracticeActivity,
           onCountingPractice: _generateCountingActivity,
+          onPhonologicalAwareness: _generatePhonologicalAwarenessActivity,
           onSeries: _generateSeriesActivity,
           onSymmetry: _generateSymmetryActivity,
           onSyllableVocabulary: _generateSyllableVocabularyActivity,
