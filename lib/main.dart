@@ -729,7 +729,8 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
   }
 
   Future<void> _generatePuzzleActivity() async {
-    final images = _canvasImages
+    // Usar solo las imágenes de la página actual
+    final images = _pages[_currentPage]
         .where(
           (element) =>
               element.type == CanvasElementType.networkImage ||
@@ -740,7 +741,7 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
 
     if (images.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Añade al menos una imagen primero')),
+        const SnackBar(content: Text('Añade al menos una imagen en esta página primero')),
       );
       return;
     }
@@ -791,8 +792,9 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
 
     if (result.referencePage.isEmpty && result.piecesPage.isEmpty) return;
 
-    // Sincronizar todas las listas de páginas
-    while (_pages.length < 2) {
+    // Asegurar que hay espacio para la página actual y la siguiente
+    final nextPage = _currentPage + 1;
+    while (_pages.length <= nextPage) {
       _pages.add([]);
       _pageOrientations.add(_pageOrientations[_currentPage]);
       _pageTemplates.add(TemplateType.blank);
@@ -800,16 +802,13 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
     }
 
     setState(() {
-      // Página 1: Imagen de referencia en sombra
+      // Página actual: Imagen de referencia en sombra
       _pages[_currentPage].clear();
       _pages[_currentPage].addAll(result.referencePage);
 
-      // Página 2: Piezas recortables
-      final nextPage = _currentPage + 1;
-      if (nextPage < _pages.length) {
-        _pages[nextPage].clear();
-        _pages[nextPage].addAll(result.piecesPage);
-      }
+      // Página siguiente: Piezas recortables
+      _pages[nextPage].clear();
+      _pages[nextPage].addAll(result.piecesPage);
     });
 
     if (context.mounted) {
@@ -3084,10 +3083,20 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
 
     switch (shapeType) {
       case ShapeType.line:
-        canvas
-          ..moveTo(0, size.y / 2)
-          ..lineTo(size.x, size.y / 2)
-          ..strokePath();
+        // Si width es 0, es una línea vertical; si height es 0, es horizontal
+        if (size.x == 0) {
+          // Línea vertical
+          canvas
+            ..moveTo(0, 0)
+            ..lineTo(0, size.y)
+            ..strokePath();
+        } else {
+          // Línea horizontal (comportamiento por defecto)
+          canvas
+            ..moveTo(0, size.y / 2)
+            ..lineTo(size.x, size.y / 2)
+            ..strokePath();
+        }
         break;
       case ShapeType.circle:
         canvas
@@ -3409,7 +3418,7 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
                                       );
                                     } else if (canvasElement.type ==
                                         CanvasElementType.shadow) {
-                                      // Sombra (imagen en negro/silueta)
+                                      // Sombra (imagen en negro/silueta translúcida)
                                       final scaledWidth =
                                           (canvasElement.width ?? 150) *
                                           canvasElement.scale;
@@ -3434,7 +3443,7 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
                                             BlendMode.srcIn,
                                           ),
                                           child: Opacity(
-                                            opacity: 0.8,
+                                            opacity: 0.3,
                                             child: CachedNetworkImage(
                                               imageUrl: canvasElement.imageUrl!,
                                               fit: BoxFit.contain,
@@ -6088,11 +6097,37 @@ class ShapePainter extends CustomPainter {
 
     switch (shapeType) {
       case ShapeType.line:
-        canvas.drawLine(
-          Offset(0, size.height / 2),
-          Offset(size.width, size.height / 2),
-          paint,
-        );
+        // Si width es 0, es una línea vertical; si height es 0, es horizontal
+        if (isDashed) {
+          // Líneas discontinuas
+          final dashWidth = 5.0;
+          final dashSpace = 5.0;
+
+          if (size.width == 0) {
+            // Línea vertical discontinua
+            _drawDashedVerticalLine(canvas, size.height, paint, dashWidth, dashSpace);
+          } else {
+            // Línea horizontal discontinua
+            _drawDashedHorizontalLine(canvas, size.width, size.height, paint, dashWidth, dashSpace);
+          }
+        } else {
+          // Líneas continuas
+          if (size.width == 0) {
+            // Línea vertical
+            canvas.drawLine(
+              Offset(0, 0),
+              Offset(0, size.height),
+              paint,
+            );
+          } else {
+            // Línea horizontal (comportamiento por defecto)
+            canvas.drawLine(
+              Offset(0, size.height / 2),
+              Offset(size.width, size.height / 2),
+              paint,
+            );
+          }
+        }
         break;
       case ShapeType.circle:
         canvas.drawCircle(
@@ -6146,6 +6181,15 @@ class ShapePainter extends CustomPainter {
 
       canvas.drawLine(p1, p2, paint);
     }
+  }
+
+  void _drawDashedHorizontalLine(Canvas canvas, double width, double height, Paint paint, double dashWidth, double dashSpace) {
+    final y = height / 2;
+    _drawDashedLine(canvas, Offset(0, y), Offset(width, y), paint, dashWidth, dashSpace);
+  }
+
+  void _drawDashedVerticalLine(Canvas canvas, double height, Paint paint, double dashWidth, double dashSpace) {
+    _drawDashedLine(canvas, Offset(0, 0), Offset(0, height), paint, dashWidth, dashSpace);
   }
 
   @override

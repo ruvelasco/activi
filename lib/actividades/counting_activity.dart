@@ -10,10 +10,12 @@ GeneratedActivity generateCountingActivity({
   required double a4HeightPts,
 }) {
   final selectable = images
-      .where((element) =>
-          element.type == CanvasElementType.networkImage ||
-          element.type == CanvasElementType.localImage ||
-          element.type == CanvasElementType.pictogramCard)
+      .where(
+        (element) =>
+            element.type == CanvasElementType.networkImage ||
+            element.type == CanvasElementType.localImage ||
+            element.type == CanvasElementType.pictogramCard,
+      )
       .toList();
 
   if (selectable.isEmpty) return GeneratedActivity(elements: []);
@@ -22,20 +24,24 @@ GeneratedActivity generateCountingActivity({
   final canvasWidth = isLandscape ? a4HeightPts : a4WidthPts;
   final canvasHeight = isLandscape ? a4WidthPts : a4HeightPts;
 
+  // Siempre 6 rectángulos en layout 2x3
+  const totalRectangles = 6;
   const cols = 2;
-  final rows = (selectable.length / cols).ceil();
+  const rows = 3;
   const margin = 40.0;
   final cellWidth = (canvasWidth - margin * 2) / cols;
   final cellHeight = (canvasHeight - margin * 2) / rows;
 
-  for (int i = 0; i < selectable.length; i++) {
+  // Distribuir las imágenes entre los 6 rectángulos
+  for (int i = 0; i < totalRectangles; i++) {
     final col = i % cols;
     final row = i ~/ cols;
 
     final cellX = margin + col * cellWidth;
     final cellY = margin + row * cellHeight;
 
-    final originalImage = selectable[i];
+    // Seleccionar imagen de forma cíclica
+    final originalImage = selectable[i % selectable.length];
 
     final random = DateTime.now().millisecondsSinceEpoch + i;
     final count = (random % 10) + 1;
@@ -99,7 +105,7 @@ GeneratedActivity generateCountingActivity({
         id: 'line1_$i',
         shapeType: ShapeType.line,
         position: Offset(cellX + 10, lineY),
-        shapeColor: Colors.blue[300]!,
+        shapeColor: Colors.grey,
         strokeWidth: 1.0,
       ).copyWith(width: lineWidth, height: 0),
     );
@@ -109,8 +115,8 @@ GeneratedActivity generateCountingActivity({
         id: 'line2_$i',
         shapeType: ShapeType.line,
         position: Offset(cellX + 10, lineY + 15),
-        shapeColor: Colors.black,
-        strokeWidth: 2.0,
+        shapeColor: Colors.grey,
+        strokeWidth: 1.0,
       ).copyWith(width: lineWidth, height: 0),
     );
 
@@ -119,7 +125,7 @@ GeneratedActivity generateCountingActivity({
         id: 'line3_$i',
         shapeType: ShapeType.line,
         position: Offset(cellX + 10, lineY + 30),
-        shapeColor: Colors.blue[300]!,
+        shapeColor: Colors.grey,
         strokeWidth: 1.0,
       ).copyWith(width: lineWidth, height: 0),
     );
@@ -128,7 +134,6 @@ GeneratedActivity generateCountingActivity({
   return GeneratedActivity(
     elements: result,
     template: TemplateType.countingPractice,
-    message:
-        'Actividad de conteo generada con ${selectable.length} ejercicios',
+    message: 'Actividad de conteo generada con 6 ejercicios',
   );
 }

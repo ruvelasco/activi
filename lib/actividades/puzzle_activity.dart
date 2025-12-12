@@ -61,16 +61,17 @@ PuzzleActivityResult generatePuzzleActivity({
   final refX = (pageWidth - refSize) / 2;
   final refY = (pageHeight - refSize) / 2;
 
-  // Añadir imagen de referencia
+  // Añadir imagen de referencia en sombra (escala de grises/negro)
   if (imageUrl != null) {
     referencePage.add(
-      CanvasImage.networkImage(
-        id: 'reference_image',
+      CanvasImage.shadow(
+        id: 'reference_shadow',
         imageUrl: imageUrl,
         position: Offset(refX, refY),
       ).copyWith(width: refSize, height: refSize),
     );
   } else if (imagePath != null) {
+    // Para imágenes locales, usamos la imagen normal con overlay gris
     referencePage.add(
       CanvasImage.localImage(
         id: 'reference_image',
@@ -78,17 +79,70 @@ PuzzleActivityResult generatePuzzleActivity({
         position: Offset(refX, refY),
       ).copyWith(width: refSize, height: refSize),
     );
+    // Añadir overlay gris semi-transparente
+    referencePage.add(
+      CanvasImage.shape(
+        id: 'shadow_overlay',
+        shapeType: ShapeType.rectangle,
+        position: Offset(refX, refY),
+        width: refSize,
+        height: refSize,
+        shapeColor: Colors.grey.withValues(alpha: 0.7),
+      ),
+    );
   }
 
-  // Añadir overlay gris semi-transparente para efecto sombra
+  // Añadir líneas de división en la referencia (CONTINUAS, no discontinuas)
+  final refRows = gridSize;
+  final refCols = gridSize;
+  final refPieceWidth = refSize / refCols;
+  final refPieceHeight = refSize / refRows;
+
+  // Líneas verticales (continuas)
+  for (int i = 1; i < refCols; i++) {
+    final x = refX + (i * refPieceWidth);
+    referencePage.add(
+      CanvasImage.shape(
+        id: 'ref_vline_$i',
+        shapeType: ShapeType.line,
+        position: Offset(x, refY),
+        width: 0,
+        height: refSize,
+        shapeColor: Colors.grey[800]!,
+        strokeWidth: 2.0,
+        isDashed: false, // Líneas continuas en página de referencia
+      ),
+    );
+  }
+
+  // Líneas horizontales (continuas)
+  for (int i = 1; i < refRows; i++) {
+    final y = refY + (i * refPieceHeight);
+    referencePage.add(
+      CanvasImage.shape(
+        id: 'ref_hline_$i',
+        shapeType: ShapeType.line,
+        position: Offset(refX, y),
+        width: refSize,
+        height: 0,
+        shapeColor: Colors.grey[800]!,
+        strokeWidth: 2.0,
+        isDashed: false, // Líneas continuas en página de referencia
+      ),
+    );
+  }
+
+  // Borde exterior en la referencia (continuo)
   referencePage.add(
     CanvasImage.shape(
-      id: 'shadow_overlay',
+      id: 'reference_border',
       shapeType: ShapeType.rectangle,
-      position: Offset(refX, refY),
-      width: refSize,
-      height: refSize,
-      shapeColor: Colors.grey.withOpacity(0.7),
+      position: Offset(refX - 2, refY - 2),
+      width: refSize + 4,
+      height: refSize + 4,
+      shapeColor: Colors.grey[800]!,
+      strokeWidth: 2.0,
+      isDashed: false, // Borde continuo en página de referencia
     ),
   );
 
@@ -175,6 +229,17 @@ PuzzleActivityResult generatePuzzleActivity({
       shapeColor: Colors.grey[800]!,
       strokeWidth: 2.0,
       isDashed: true,
+    ),
+  );
+
+  // Añadir icono de tijeras en esquina superior izquierda
+  piecesPage.add(
+    CanvasImage.text(
+      id: 'scissors_icon',
+      text: '✂',
+      position: const Offset(20, 20),
+      fontSize: 40.0,
+      textColor: Colors.grey[800]!,
     ),
   );
 
