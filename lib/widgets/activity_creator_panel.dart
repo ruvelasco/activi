@@ -13,6 +13,7 @@ class ActivityCreatorPanel extends StatelessWidget {
   final VoidCallback onPhrases;
   final VoidCallback onCard;
   final VoidCallback onClassification;
+  final VoidCallback onPhonologicalAwareness;
 
   const ActivityCreatorPanel({
     super.key,
@@ -28,6 +29,7 @@ class ActivityCreatorPanel extends StatelessWidget {
     required this.onPhrases,
     required this.onCard,
     required this.onClassification,
+    required this.onPhonologicalAwareness,
   });
 
   @override
@@ -83,6 +85,15 @@ class ActivityCreatorPanel extends StatelessWidget {
               description:
                   'Crea ejercicios con cada imagen repetida un número aleatorio de veces (1-10) en un cuadrado, con espacio para escribir la cantidad.',
               onPressed: onCountingPractice,
+            ),
+            _buildActionButton(
+              context,
+              label: 'Conciencia Fonológica',
+              icon: Icons.hearing,
+              color: Colors.deepPurple[700],
+              description:
+                  'Separa las palabras en sílabas. Muestra la imagen, las sílabas separadas y líneas en pauta escolar para que el alumno repase cada sílaba.',
+              onPressed: onPhonologicalAwareness,
             ),
             _buildActionButton(
               context,
