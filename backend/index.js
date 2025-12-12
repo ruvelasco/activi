@@ -171,6 +171,26 @@ app.delete('/projects/:id', authMiddleware, async (req, res) => {
   }
 });
 
+// Proxy para separación de sílabas (evitar CORS)
+app.get('/syllables', async (req, res) => {
+  try {
+    const { word } = req.query;
+
+    if (!word) {
+      return res.status(400).json({ message: 'Word parameter required' });
+    }
+
+    const url = `http://www.aulatea.com/silabas/website/silabas/index.php?json=1&word=${encodeURIComponent(word)}`;
+    const response = await fetch(url);
+    const data = await response.json();
+
+    return res.json(data);
+  } catch (err) {
+    console.error('Syllables proxy error:', err);
+    return res.status(500).json({ message: 'Error fetching syllables data' });
+  }
+});
+
 // Proxy para SoyVisual (evitar CORS)
 app.get('/soyvisual/search', async (req, res) => {
   try {
