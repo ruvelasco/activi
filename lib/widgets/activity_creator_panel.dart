@@ -14,6 +14,7 @@ class ActivityCreatorPanel extends StatelessWidget {
   final VoidCallback onCard;
   final VoidCallback onClassification;
   final VoidCallback onPhonologicalAwareness;
+  final VoidCallback onPhonologicalBoard;
 
   const ActivityCreatorPanel({
     super.key,
@@ -30,6 +31,7 @@ class ActivityCreatorPanel extends StatelessWidget {
     required this.onCard,
     required this.onClassification,
     required this.onPhonologicalAwareness,
+    required this.onPhonologicalBoard,
   });
 
   @override
@@ -94,6 +96,15 @@ class ActivityCreatorPanel extends StatelessWidget {
               description:
                   'Separa las palabras en sílabas. Muestra la imagen, las sílabas separadas y líneas en pauta escolar para que el alumno repase cada sílaba.',
               onPressed: onPhonologicalAwareness,
+            ),
+            _buildActionButton(
+              context,
+              label: 'Tablero Fonológico (recortable)',
+              icon: Icons.view_column,
+              color: Colors.deepOrange[700],
+              description:
+                  'Crea un tablero vertical con zona de puzle 2x2 y huecos para palabra, sílabas y letras, más otra hoja con las piezas y tarjetas recortables listas para imprimir.',
+              onPressed: onPhonologicalBoard,
             ),
             _buildActionButton(
               context,

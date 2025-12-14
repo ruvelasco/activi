@@ -86,6 +86,7 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
   final UserService _userService = UserService();
   UserAccount? _currentUser;
   String? _activeProjectId;
+  String _projectName = ''; // Nombre del proyecto actual
   bool _isPersisting = false;
   bool _sidebarCollapsed = false;
   static const String _arasaacCredit =
@@ -336,6 +337,16 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
       _requireLogin();
       return;
     }
+
+    // Paso 1: Elegir etiqueta
+    final selectedLabel = await showDialog<String>(
+      context: context,
+      builder: (context) => _LabelSelectionDialog(),
+    );
+
+    if (selectedLabel == null) return; // Usuario canceló
+
+    // Paso 2: Nombre del proyecto
     final nameController = TextEditingController(
       text: 'Proyecto ${DateTime.now().toLocal().toString().split(' ').first}',
     );
@@ -365,8 +376,51 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
     );
 
     if (result != null && result.isNotEmpty) {
+      // Insertar etiqueta como primera página
+      await _insertLabelAsFirstPage(selectedLabel);
       await _saveProject(result);
     }
+  }
+
+  Future<void> _insertLabelAsFirstPage(String labelPath) async {
+    // Cargar la imagen de assets como bytes para que funcione en web
+    final ByteData data = await rootBundle.load(labelPath);
+    final Uint8List bytes = data.buffer.asUint8List();
+
+    setState(() {
+      // Insertar una nueva página vacía al inicio
+      _pages.insert(0, []);
+      _pageOrientations.insert(0, false); // Vertical por defecto
+      _pageTemplates.insert(0, TemplateType.blank);
+      _pageBackgrounds.insert(0, Colors.white);
+
+      // Añadir la etiqueta centrada en la página
+      final canvasWidth = _a4WidthPts;
+      final canvasHeight = _a4HeightPts;
+
+      // Las etiquetas son 2000x600 (proporción 10:3)
+      // Ajustar tamaño respetando la proporción
+      final labelWidth = canvasWidth * 0.85; // 85% del ancho de la página
+      final labelHeight = labelWidth * (600 / 2000); // Mantener proporción 10:3
+      final labelX = (canvasWidth - labelWidth) / 2;
+      final labelY = (canvasHeight - labelHeight) / 2;
+
+      _pages[0].add(
+        CanvasImage.localImage(
+          id: 'label_${DateTime.now().millisecondsSinceEpoch}',
+          imagePath: labelPath,
+          position: Offset(labelX, labelY),
+          scale: 1.0,
+        ).copyWith(
+          width: labelWidth,
+          height: labelHeight,
+          webBytes: bytes, // Añadir los bytes para que funcione en web
+        ),
+      );
+
+      // Ir a la primera página
+      _currentPage = 0;
+    });
   }
 
   ProjectData _buildProjectData(String name) {
@@ -407,6 +461,7 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
     print('DEBUG: Resultado de saveProject: ${saved != null ? "SUCCESS" : "FAILED"}');
     setState(() {
       _activeProjectId = saved?.id;
+      _projectName = name; // Guardar nombre del proyecto
       _isPersisting = false;
     });
     if (saved == null) {
@@ -521,6 +576,7 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
         ..add([]);
       _historyIndex = 0;
       _activeProjectId = project.id;
+      _projectName = project.name; // Guardar nombre del proyecto
     });
     _saveToHistory();
     if (context.mounted) {
@@ -918,6 +974,14 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
       return;
     }
 
+    // Mostrar diálogo de configuración
+    final config = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => _PhonologicalAwarenessConfigDialog(),
+    );
+
+    if (config == null) return; // Usuario canceló
+
     // Mostrar indicador de carga
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -928,26 +992,112 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
       );
     }
 
+    debugPrint('DEBUG main.dart: _projectName = "$_projectName"');
+
     final result = await generatePhonologicalAwarenessActivity(
       images: images,
       isLandscape: _pageOrientations[_currentPage],
       a4WidthPts: _a4WidthPts,
       a4HeightPts: _a4HeightPts,
+      fontFamily: config['fontFamily'] as String,
+      uppercase: config['uppercase'] as bool,
+      imagesPerPage: 8,
+      showWord: true,
+      showSyllables: true,
+      showLetters: false,
+      projectName: _projectName, // Pasar nombre del proyecto
     );
 
-    if (result.elements.isEmpty) return;
+    if (result.pages.isEmpty || result.pages.first.isEmpty) return;
+
+    // Asegurar que hay suficientes páginas
+    while (_pages.length < _currentPage + result.pages.length) {
+      _pages.add([]);
+      _pageOrientations.add(_pageOrientations[_currentPage]);
+      _pageTemplates.add(TemplateType.blank);
+      _pageBackgrounds.add(Colors.white);
+    }
 
     setState(() {
-      _pages[_currentPage].clear();
-      if (result.template != null) {
-        _pageTemplates[_currentPage] = result.template!;
+      // Reemplazar páginas con el resultado
+      for (int i = 0; i < result.pages.length; i++) {
+        final pageIndex = _currentPage + i;
+        _pages[pageIndex].clear();
+        _pages[pageIndex].addAll(result.pages[i]);
       }
-      _pages[_currentPage].addAll(result.elements);
     });
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(result.message ?? 'Actividad generada')),
+        SnackBar(content: Text(result.message)),
+      );
+    }
+  }
+
+  Future<void> _generatePhonologicalBoardActivity() async {
+    final images = _pages[_currentPage]
+        .where(
+          (element) =>
+              element.type == CanvasElementType.networkImage ||
+              element.type == CanvasElementType.localImage ||
+              element.type == CanvasElementType.pictogramCard,
+        )
+        .toList();
+
+    if (images.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Añade al menos una imagen de ARASAAC primero'),
+        ),
+      );
+      return;
+    }
+
+    final config = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => _PhonologicalAwarenessConfigDialog(),
+    );
+
+    if (config == null) return;
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Generando tablero fonológico...'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+
+    final result = await generatePhonologicalBoardActivity(
+      images: images,
+      isLandscape: _pageOrientations[_currentPage],
+      a4WidthPts: _a4WidthPts,
+      a4HeightPts: _a4HeightPts,
+      fontFamily: config['fontFamily'] as String,
+      uppercase: config['uppercase'] as bool,
+    );
+
+    if (result.pages.isEmpty || result.pages.first.isEmpty) return;
+
+    while (_pages.length < _currentPage + result.pages.length) {
+      _pages.add([]);
+      _pageOrientations.add(_pageOrientations[_currentPage]);
+      _pageTemplates.add(TemplateType.blank);
+      _pageBackgrounds.add(Colors.white);
+    }
+
+    setState(() {
+      for (int i = 0; i < result.pages.length; i++) {
+        final pageIndex = _currentPage + i;
+        _pages[pageIndex].clear();
+        _pages[pageIndex].addAll(result.pages[i]);
+      }
+    });
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(result.message)),
       );
     }
   }
@@ -2392,6 +2542,22 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
       return;
     }
 
+    // Cargar fuentes escolares para PDF
+    final coleCarreiraData = await rootBundle.load('assets/fonts/ColeCarreira.ttf');
+    final coleCarreiraFont = pw.Font.ttf(coleCarreiraData);
+
+    final escolarGData = await rootBundle.load('assets/fonts/Escolar_G.TTF');
+    final escolarGFont = pw.Font.ttf(escolarGData);
+
+    final escolarPData = await rootBundle.load('assets/fonts/Escolar_P.TTF');
+    final escolarPFont = pw.Font.ttf(escolarPData);
+
+    final traceData = await rootBundle.load('assets/fonts/TRACE___.TTF');
+    final traceFont = pw.Font.ttf(traceData);
+
+    final massalleraData = await rootBundle.load('assets/fonts/massallera.TTF');
+    final massalleraFont = pw.Font.ttf(massalleraData);
+
     final pdf = pw.Document();
 
     // Generar cada página del PDF
@@ -2540,24 +2706,31 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
                       element.flipHorizontal ? -1.0 : 1.0,
                       element.flipVertical ? -1.0 : 1.0,
                       1.0,
-                    ),
-                    child: pw.Container(
-                      width: textWidth,
-                      padding: const pw.EdgeInsets.all(8),
-                      child: pw.Text(
-                        element.text ?? '',
-                        style: pw.TextStyle(
-                          fontSize: element.fontSize,
-                          color: PdfColor.fromInt(element.textColor.value),
+                  ),
+                  child: pw.Container(
+                    width: textWidth,
+                    padding: pw.EdgeInsets.zero,
+                    child: pw.Text(
+                      element.text ?? '',
+                      style: pw.TextStyle(
+                        fontSize: element.fontSize,
+                        color: PdfColor.fromInt(element.textColor.value),
                           fontWeight: element.isBold ? pw.FontWeight.bold : pw.FontWeight.normal,
                           fontStyle: element.isItalic ? pw.FontStyle.italic : pw.FontStyle.normal,
                           decoration: element.isUnderline ? pw.TextDecoration.underline : pw.TextDecoration.none,
-                        ),
+                          font: element.fontFamily == 'ColeCarreira' ? coleCarreiraFont
+                              : element.fontFamily == 'EscolarG' ? escolarGFont
+                              : element.fontFamily == 'EscolarP' ? escolarPFont
+                              : element.fontFamily == 'Trace' ? traceFont
+                              : element.fontFamily == 'Massallera' ? massalleraFont
+                              : null,
                       ),
+                      textAlign: pw.TextAlign.center,
                     ),
                   ),
                 ),
               ),
+            ),
             );
           } else if (element.type == CanvasElementType.localImage) {
             // Imagen local del dispositivo
@@ -3333,7 +3506,7 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
                                       final textWidth = (canvasElement.width ?? 300.0) * canvasElement.scale;
                                       content = Container(
                                         width: textWidth,
-                                        padding: const EdgeInsets.all(8),
+                                        padding: EdgeInsets.zero,
                                         decoration: BoxDecoration(
                                           border: isSelected
                                               ? Border.all(
@@ -3352,6 +3525,7 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
                                             fontStyle: canvasElement.isItalic ? FontStyle.italic : FontStyle.normal,
                                             decoration: canvasElement.isUnderline ? TextDecoration.underline : TextDecoration.none,
                                           ),
+                                          textAlign: TextAlign.center,
                                         ),
                                       );
                                     } else if (canvasElement.type ==
@@ -4332,6 +4506,7 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
           onWritingPractice: _generateWritingPracticeActivity,
           onCountingPractice: _generateCountingActivity,
           onPhonologicalAwareness: _generatePhonologicalAwarenessActivity,
+          onPhonologicalBoard: _generatePhonologicalBoardActivity,
           onSeries: _generateSeriesActivity,
           onSymmetry: _generateSymmetryActivity,
           onSyllableVocabulary: _generateSyllableVocabularyActivity,
@@ -5029,6 +5204,26 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
               contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             ),
             items: const [
+              DropdownMenuItem(
+                value: 'ColeCarreira',
+                child: Text('Cole Carreira', style: TextStyle(fontFamily: 'ColeCarreira')),
+              ),
+              DropdownMenuItem(
+                value: 'EscolarG',
+                child: Text('Escolar G', style: TextStyle(fontFamily: 'EscolarG')),
+              ),
+              DropdownMenuItem(
+                value: 'EscolarP',
+                child: Text('Escolar P', style: TextStyle(fontFamily: 'EscolarP')),
+              ),
+              DropdownMenuItem(
+                value: 'Trace',
+                child: Text('Trace', style: TextStyle(fontFamily: 'Trace')),
+              ),
+              DropdownMenuItem(
+                value: 'Massallera',
+                child: Text('Massallera', style: TextStyle(fontFamily: 'Massallera')),
+              ),
               DropdownMenuItem(value: 'Roboto', child: Text('Roboto')),
               DropdownMenuItem(value: 'Arial', child: Text('Arial')),
               DropdownMenuItem(value: 'Courier', child: Text('Courier')),
@@ -6249,4 +6444,192 @@ class ShapePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+}
+
+// Diálogo de configuración para actividad de Conciencia Fonológica
+class _PhonologicalAwarenessConfigDialog extends StatefulWidget {
+  @override
+  _PhonologicalAwarenessConfigDialogState createState() =>
+      _PhonologicalAwarenessConfigDialogState();
+}
+
+class _PhonologicalAwarenessConfigDialogState
+    extends State<_PhonologicalAwarenessConfigDialog> {
+  String _selectedFont = 'ColeCarreira';
+  bool _uppercase = true;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Configuración de Conciencia Fonológica'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Tipo de letra:',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            DropdownButton<String>(
+              value: _selectedFont,
+              isExpanded: true,
+              items: const [
+                DropdownMenuItem(
+                  value: 'ColeCarreira',
+                  child: Text('Cole Carreira', style: TextStyle(fontFamily: 'ColeCarreira')),
+                ),
+                DropdownMenuItem(
+                  value: 'EscolarG',
+                  child: Text('Escolar G', style: TextStyle(fontFamily: 'EscolarG')),
+                ),
+                DropdownMenuItem(
+                  value: 'EscolarP',
+                  child: Text('Escolar P', style: TextStyle(fontFamily: 'EscolarP')),
+                ),
+                DropdownMenuItem(
+                  value: 'Trace',
+                  child: Text('Trace', style: TextStyle(fontFamily: 'Trace')),
+                ),
+                DropdownMenuItem(
+                  value: 'Massallera',
+                  child: Text('Massallera', style: TextStyle(fontFamily: 'Massallera')),
+                ),
+                DropdownMenuItem(
+                  value: 'Roboto',
+                  child: Text('Roboto (Normal)', style: TextStyle(fontFamily: 'Roboto')),
+                ),
+              ],
+              onChanged: (value) {
+                if (value != null) {
+                  setState(() => _selectedFont = value);
+                }
+              },
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              'Formato de texto:',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            RadioListTile<bool>(
+              title: const Text('MAYÚSCULAS'),
+              value: true,
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              groupValue: _uppercase,
+              onChanged: (value) {
+                if (value != null) {
+                  setState(() => _uppercase = value);
+                }
+              },
+            ),
+            RadioListTile<bool>(
+              title: const Text('minúsculas'),
+              value: false,
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              groupValue: _uppercase,
+              onChanged: (value) {
+                if (value != null) {
+                  setState(() => _uppercase = value);
+                }
+              },
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancelar'),
+        ),
+        ElevatedButton(
+          onPressed: () {
+            Navigator.of(context).pop({
+              'fontFamily': _selectedFont,
+              'uppercase': _uppercase,
+            });
+          },
+          child: const Text('Generar'),
+        ),
+      ],
+    );
+  }
+}
+
+// Diálogo de selección de etiquetas
+class _LabelSelectionDialog extends StatefulWidget {
+  @override
+  _LabelSelectionDialogState createState() => _LabelSelectionDialogState();
+}
+
+class _LabelSelectionDialogState extends State<_LabelSelectionDialog> {
+  final List<String> _labels = List.generate(
+    34,
+    (index) => 'assets/etiquetasCajas/etiqueta_${index + 1}.png',
+  );
+
+  String? _selectedLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Selecciona una etiqueta para la caja'),
+      content: SizedBox(
+        width: double.maxFinite,
+        height: 500,
+        child: GridView.builder(
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            crossAxisSpacing: 8,
+            mainAxisSpacing: 8,
+            childAspectRatio: 3.33, // Proporción 2000x600 = 10:3
+          ),
+          itemCount: _labels.length,
+          itemBuilder: (context, index) {
+            final label = _labels[index];
+            final isSelected = _selectedLabel == label;
+
+            return GestureDetector(
+              onTap: () {
+                setState(() {
+                  _selectedLabel = label;
+                });
+              },
+              child: Container(
+                decoration: BoxDecoration(
+                  border: Border.all(
+                    color: isSelected ? Colors.blue : Colors.grey,
+                    width: isSelected ? 3 : 1,
+                  ),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: Image.asset(
+                    label,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancelar'),
+        ),
+        ElevatedButton(
+          onPressed: _selectedLabel != null
+              ? () => Navigator.of(context).pop(_selectedLabel)
+              : null,
+          child: const Text('Seleccionar'),
+        ),
+      ],
+    );
+  }
 }

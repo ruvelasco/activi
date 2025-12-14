@@ -232,14 +232,15 @@ PuzzleActivityResult generatePuzzleActivity({
     ),
   );
 
-  // Añadir icono de tijeras en esquina superior izquierda
+  // Añadir texto de recortar en esquina superior izquierda
   piecesPage.add(
     CanvasImage.text(
-      id: 'scissors_icon',
-      text: '✂',
+      id: 'scissors_label',
+      text: '✂ RECORTAR',
       position: const Offset(20, 20),
-      fontSize: 40.0,
+      fontSize: 24.0,
       textColor: Colors.grey[800]!,
+      isBold: true,
     ),
   );
 
