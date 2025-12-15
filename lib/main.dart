@@ -34,6 +34,8 @@ import 'actividades/semantic_field_activity.dart' as semantic_activity;
 import 'actividades/instructions_activity.dart' as instructions_activity;
 import 'actividades/phrases_activity.dart' as phrases_activity;
 import 'actividades/card_activity.dart' as card_activity;
+import 'actividades/activity_pack_generator.dart';
+import 'widgets/activity_pack_config_dialog.dart';
 
 void main() {
   runApp(const MyApp());
@@ -763,26 +765,157 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
       return;
     }
 
-    final result = generateShadowMatchingActivity(
-      images: images,
-      isLandscape: _pageOrientations[_currentPage],
-      a4WidthPts: _a4WidthPts,
-      a4HeightPts: _a4HeightPts,
-    );
+    int selected = 6;
+    showDialog<int>(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('Configurar Sombras'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('Sombras por página'),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [4, 6, 8, 10]
+                        .map(
+                          (n) => ChoiceChip(
+                            label: Text('$n'),
+                            selected: selected == n,
+                            onSelected: (_) => setState(() => selected = n),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Cancelar'),
+                ),
+                ElevatedButton(
+                  onPressed: () => Navigator.of(context).pop(selected),
+                  child: const Text('Generar'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    ).then((pairsPerPage) {
+      if (pairsPerPage == null) return;
 
-    if (result.elements.isEmpty) return;
+      final result = generateShadowMatchingActivity(
+        images: images,
+        isLandscape: _pageOrientations[_currentPage],
+        a4WidthPts: _a4WidthPts,
+        a4HeightPts: _a4HeightPts,
+        pairsPerPage: pairsPerPage,
+      );
 
-    setState(() {
-      _pages[_currentPage].clear();
-      if (result.template != null) {
-        _pageTemplates[_currentPage] = result.template!;
+      if (result.pages.isEmpty || result.pages.first.isEmpty) return;
+
+      while (_pages.length < _currentPage + result.pages.length) {
+        _pages.add([]);
+        _pageOrientations.add(_pageOrientations[_currentPage]);
+        _pageTemplates.add(TemplateType.blank);
+        _pageBackgrounds.add(Colors.white);
       }
-      _pages[_currentPage].addAll(result.elements);
-    });
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(result.message ?? 'Actividad generada')),
+      setState(() {
+        for (int i = 0; i < result.pages.length; i++) {
+          final pageIndex = _currentPage + i;
+          _pages[pageIndex].clear();
+          _pages[pageIndex].addAll(result.pages[i]);
+          _pageTemplates[pageIndex] = TemplateType.blank;
+          _pageOrientations[pageIndex] = _pageOrientations[_currentPage];
+        }
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(result.message)),
+      );
+    });
+  }
+
+  Future<void> _generateActivityPack() async {
+    final images = _canvasImages
+        .where(
+          (element) =>
+              element.type == CanvasElementType.networkImage ||
+              element.type == CanvasElementType.localImage ||
+              element.type == CanvasElementType.pictogramCard,
+        )
+        .toList();
+
+    if (images.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Añade al menos una imagen primero')),
+      );
+      return;
+    }
+
+    final config = await showDialog<ActivityPackConfig>(
+      context: context,
+      builder: (context) => const ActivityPackConfigDialog(),
     );
+
+    if (config == null) return;
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Generando ${config.title}...')),
+    );
+
+    try {
+      final result = await ActivityPackGenerator.generatePack(
+        canvasImages: images,
+        config: config,
+        isLandscape: _pageOrientations[_currentPage],
+        a4WidthPts: _a4WidthPts,
+        a4HeightPts: _a4HeightPts,
+      );
+
+      if (!mounted) return;
+
+      if (result.pages.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No se pudo generar ninguna actividad')),
+        );
+        return;
+      }
+
+      while (_pages.length < _currentPage + result.pages.length) {
+        _pages.add([]);
+        _pageOrientations.add(_pageOrientations[_currentPage]);
+        _pageTemplates.add(TemplateType.blank);
+        _pageBackgrounds.add(Colors.white);
+      }
+
+      setState(() {
+        for (int i = 0; i < result.pages.length; i++) {
+          final pageIndex = _currentPage + i;
+          _pages[pageIndex].clear();
+          _pages[pageIndex].addAll(result.pages[i]);
+          _pageTemplates[pageIndex] = TemplateType.blank;
+          _pageOrientations[pageIndex] = _pageOrientations[_currentPage];
+        }
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(result.message)),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al generar el pack: $e')),
+      );
+    }
   }
 
   Future<void> _generatePuzzleActivity() async {
@@ -877,7 +1010,7 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
     }
   }
 
-  void _generateWritingPracticeActivity() {
+  Future<void> _generateWritingPracticeActivity() async {
     final images = _canvasImages
         .where(
           (element) =>
@@ -894,21 +1027,157 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
       return;
     }
 
-    final result = generateWritingPracticeActivity(
+    int selectedItems = 6;
+    bool showModel = false;
+    String fontFamily = 'ColeCarreira';
+    bool uppercase = true;
+
+    final config = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('Configurar Práctica de Escritura'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Dibujos/repeticiones por página'),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [4, 6, 8, 10]
+                          .map(
+                            (n) => ChoiceChip(
+                              label: Text('$n'),
+                              selected: selectedItems == n,
+                              onSelected: (_) => setState(() => selectedItems = n),
+                            ),
+                          )
+                          .toList(),
+                    ),
+                    const SizedBox(height: 16),
+                    CheckboxListTile(
+                      value: showModel,
+                      onChanged: (v) => setState(() => showModel = v ?? false),
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Mostrar modelo de palabra (si la hay)'),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text('Tipo de letra'),
+                    DropdownButton<String>(
+                      value: fontFamily,
+                      isExpanded: true,
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'ColeCarreira',
+                          child: Text('Cole Carreira', style: TextStyle(fontFamily: 'ColeCarreira')),
+                        ),
+                        DropdownMenuItem(
+                          value: 'EscolarG',
+                          child: Text('Escolar G', style: TextStyle(fontFamily: 'EscolarG')),
+                        ),
+                        DropdownMenuItem(
+                          value: 'EscolarP',
+                          child: Text('Escolar P', style: TextStyle(fontFamily: 'EscolarP')),
+                        ),
+                        DropdownMenuItem(
+                          value: 'Trace',
+                          child: Text('Trace', style: TextStyle(fontFamily: 'Trace')),
+                        ),
+                        DropdownMenuItem(
+                          value: 'Massallera',
+                          child: Text('Massallera', style: TextStyle(fontFamily: 'Massallera')),
+                        ),
+                        DropdownMenuItem(
+                          value: 'Roboto',
+                          child: Text('Roboto (Normal)', style: TextStyle(fontFamily: 'Roboto')),
+                        ),
+                      ],
+                      onChanged: (v) {
+                        if (v != null) setState(() => fontFamily = v);
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    const Text('Formato de texto'),
+                    RadioListTile<bool>(
+                      title: const Text('MAYÚSCULAS'),
+                      value: true,
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      groupValue: uppercase,
+                      onChanged: (v) {
+                        if (v != null) setState(() => uppercase = v);
+                      },
+                    ),
+                    RadioListTile<bool>(
+                      title: const Text('minúsculas'),
+                      value: false,
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      groupValue: uppercase,
+                      onChanged: (v) {
+                        if (v != null) setState(() => uppercase = v);
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Cancelar'),
+                ),
+                ElevatedButton(
+                  onPressed: () => Navigator.of(context).pop({
+                    'items': selectedItems,
+                    'showModel': showModel,
+                    'fontFamily': fontFamily,
+                    'uppercase': uppercase,
+                  }),
+                  child: const Text('Generar'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (config == null) return;
+
+    final result = await generateWritingPracticeActivity(
       images: images,
       isLandscape: _pageOrientations[_currentPage],
       a4WidthPts: _a4WidthPts,
       a4HeightPts: _a4HeightPts,
+      itemsPerPage: config['items'] as int,
+      showModel: config['showModel'] as bool,
+      fontFamily: config['fontFamily'] as String,
+      uppercase: config['uppercase'] as bool,
     );
 
-    if (result.elements.isEmpty) return;
+    if (result.pages.isEmpty || result.pages.first.isEmpty) return;
+
+    while (_pages.length < _currentPage + result.pages.length) {
+      _pages.add([]);
+      _pageOrientations.add(_pageOrientations[_currentPage]);
+      _pageTemplates.add(TemplateType.blank);
+      _pageBackgrounds.add(Colors.white);
+    }
 
     setState(() {
-      _pages[_currentPage].clear();
-      if (result.template != null) {
-        _pageTemplates[_currentPage] = result.template!;
+      for (int i = 0; i < result.pages.length; i++) {
+        final pageIndex = _currentPage + i;
+        _pages[pageIndex].clear();
+        _pages[pageIndex].addAll(result.pages[i]);
+        _pageTemplates[pageIndex] = TemplateType.writingPractice;
+        _pageOrientations[pageIndex] = _pageOrientations[_currentPage];
       }
-      _pages[_currentPage].addAll(result.elements);
     });
 
     ScaffoldMessenger.of(context).showSnackBar(
@@ -933,26 +1202,110 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
       return;
     }
 
-    final result = generateCountingActivity(
-      images: images,
-      isLandscape: _pageOrientations[_currentPage],
-      a4WidthPts: _a4WidthPts,
-      a4HeightPts: _a4HeightPts,
-    );
+    int selectedBoxes = 6;
+    RangeValues selectedRange = const RangeValues(1, 20);
 
-    if (result.elements.isEmpty) return;
+    showDialog<int>(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('Configurar Práctica de Conteo'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('Cajas por página'),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [2, 4, 6, 8]
+                        .map(
+                          (n) => ChoiceChip(
+                            label: Text('$n'),
+                            selected: selectedBoxes == n,
+                            onSelected: (_) => setState(() => selectedBoxes = n),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                  const SizedBox(height: 20),
+                  const Text('Rango de cantidades'),
+                  RangeSlider(
+                    values: selectedRange,
+                    min: 1,
+                    max: 20,
+                    divisions: 19,
+                    labels: RangeLabels(
+                      selectedRange.start.round().toString(),
+                      selectedRange.end.round().toString(),
+                    ),
+                    onChanged: (values) {
+                      if (values.end - values.start >= 1) {
+                        setState(() => selectedRange = values);
+                      }
+                    },
+                  ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Mín: ${selectedRange.start.round()}'),
+                      Text('Máx: ${selectedRange.end.round()}'),
+                    ],
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Cancelar'),
+                ),
+                ElevatedButton(
+                  onPressed: () => Navigator.of(context).pop(selectedBoxes),
+                  child: const Text('Generar'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    ).then((boxesPerPage) {
+      if (boxesPerPage == null) return;
 
-    setState(() {
-      _pages[_currentPage].clear();
-      if (result.template != null) {
-        _pageTemplates[_currentPage] = result.template!;
+      final result = generateCountingActivity(
+        images: images,
+        isLandscape: _pageOrientations[_currentPage],
+        a4WidthPts: _a4WidthPts,
+        a4HeightPts: _a4HeightPts,
+        boxesPerPage: boxesPerPage,
+        minCount: selectedRange.start.round(),
+        maxCount: selectedRange.end.round(),
+      );
+
+      if (result.pages.isEmpty || result.pages.first.isEmpty) return;
+
+      while (_pages.length < _currentPage + result.pages.length) {
+        _pages.add([]);
+        _pageOrientations.add(_pageOrientations[_currentPage]);
+        _pageTemplates.add(TemplateType.blank);
+        _pageBackgrounds.add(Colors.white);
       }
-      _pages[_currentPage].addAll(result.elements);
-    });
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(result.message ?? 'Actividad generada')),
-    );
+      setState(() {
+        for (int i = 0; i < result.pages.length; i++) {
+          final pageIndex = _currentPage + i;
+          _pages[pageIndex].clear();
+          _pages[pageIndex].addAll(result.pages[i]);
+          _pageTemplates[pageIndex] = TemplateType.countingPractice;
+          _pageOrientations[pageIndex] = _pageOrientations[_currentPage];
+        }
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(result.message ?? 'Actividad generada')),
+      );
+    });
   }
 
   Future<void> _generatePhonologicalAwarenessActivity() async {
@@ -1126,15 +1479,27 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
       a4HeightPts: _a4HeightPts,
     );
 
-    if (result.elements.isEmpty) return;
+    if (result.pages.isEmpty || result.pages.first.isEmpty) return;
+
+    while (_pages.length < _currentPage + result.pages.length) {
+      _pages.add([]);
+      _pageOrientations.add(_pageOrientations[_currentPage]);
+      _pageTemplates.add(TemplateType.blank);
+      _pageBackgrounds.add(Colors.white);
+    }
 
     setState(() {
-      _pages[_currentPage].clear();
-      _pages[_currentPage].addAll(result.elements);
+      for (int i = 0; i < result.pages.length; i++) {
+        final pageIndex = _currentPage + i;
+        _pages[pageIndex].clear();
+        _pages[pageIndex].addAll(result.pages[i]);
+        _pageTemplates[pageIndex] = TemplateType.blank;
+        _pageOrientations[pageIndex] = _pageOrientations[_currentPage];
+      }
     });
 
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(result.message ?? 'Actividad de series generada')),
+      SnackBar(content: Text(result.message)),
     );
   }
 
@@ -1244,83 +1609,119 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
       return;
     }
 
-    final titleController = TextEditingController();
-    final bodyController = TextEditingController();
-
-    final confirmed = await showDialog<bool>(
+    final config = await showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Generar tarjeta'),
-        scrollable: true,
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: titleController,
-                decoration: const InputDecoration(
-                  labelText: 'Título',
-                  border: OutlineInputBorder(),
+      builder: (context) {
+        card_activity.CardLayout layout = card_activity.CardLayout.imageLeft;
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('Generar tarjeta'),
+              scrollable: true,
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'Diseño de tarjeta',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    RadioListTile<card_activity.CardLayout>(
+                      title: const Text('Imagen arriba, título y texto debajo'),
+                      value: card_activity.CardLayout.imageTop,
+                      groupValue: layout,
+                      onChanged: (v) {
+                        if (v != null) setState(() => layout = v);
+                      },
+                      dense: true,
+                    ),
+                    RadioListTile<card_activity.CardLayout>(
+                      title: const Text('Imagen a la izquierda, texto a la derecha'),
+                      value: card_activity.CardLayout.imageLeft,
+                      groupValue: layout,
+                      onChanged: (v) {
+                        if (v != null) setState(() => layout = v);
+                      },
+                      dense: true,
+                    ),
+                    RadioListTile<card_activity.CardLayout>(
+                      title: const Text('Imagen a la derecha, texto a la izquierda'),
+                      value: card_activity.CardLayout.imageRight,
+                      groupValue: layout,
+                      onChanged: (v) {
+                        if (v != null) setState(() => layout = v);
+                      },
+                      dense: true,
+                    ),
+                    RadioListTile<card_activity.CardLayout>(
+                      title: const Text('Título y texto arriba, imagen abajo'),
+                      value: card_activity.CardLayout.textThenImage,
+                      groupValue: layout,
+                      onChanged: (v) {
+                        if (v != null) setState(() => layout = v);
+                      },
+                      dense: true,
+                    ),
+                  ],
                 ),
-                autofocus: true,
-                textInputAction: TextInputAction.next,
               ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: bodyController,
-                decoration: const InputDecoration(
-                  labelText: 'Párrafo',
-                  border: OutlineInputBorder(),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Cancelar'),
                 ),
-                maxLines: null,
-                minLines: 3,
-                keyboardType: TextInputType.multiline,
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Generar'),
-          ),
-        ],
-      ),
+                ElevatedButton(
+                  onPressed: () => Navigator.of(context).pop({
+                    'layout': layout,
+                  }),
+                  child: const Text('Generar'),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
 
-    if (confirmed != true) return;
+    if (config == null) return;
 
-    final title = titleController.text.trim();
-    final body = bodyController.text.trim();
-    if (title.isEmpty || body.isEmpty) return;
-
-    final result = card_activity.generateCardActivity(
+    final result = await card_activity.generateCardActivity(
       images: images,
-      title: title,
-      body: body,
       isLandscape: _pageOrientations[_currentPage],
       a4WidthPts: _a4WidthPts,
       a4HeightPts: _a4HeightPts,
+      layout: config['layout'] as card_activity.CardLayout,
     );
 
-    if (result.elements.isEmpty) {
+    if (result.pages.isEmpty || result.pages.first.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('No se pudo generar la tarjeta')),
       );
       return;
     }
 
+    while (_pages.length < _currentPage + result.pages.length) {
+      _pages.add([]);
+      _pageOrientations.add(_pageOrientations[_currentPage]);
+      _pageTemplates.add(TemplateType.blank);
+      _pageBackgrounds.add(Colors.white);
+    }
+
     setState(() {
-      _pages[_currentPage].clear();
-      _pages[_currentPage].addAll(result.elements);
+      for (int i = 0; i < result.pages.length; i++) {
+        final pageIndex = _currentPage + i;
+        _pages[pageIndex].clear();
+        _pages[pageIndex].addAll(result.pages[i]);
+        _pageTemplates[pageIndex] = TemplateType.blank;
+        _pageOrientations[pageIndex] = _pageOrientations[_currentPage];
+      }
     });
 
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(result.message ?? 'Tarjeta generada')),
+      SnackBar(content: Text(result.message)),
     );
   }
 
@@ -1348,16 +1749,28 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
       a4HeightPts: _a4HeightPts,
     );
 
-    if (result.elements.isEmpty) return;
+    if (result.pages.isEmpty || result.pages.first.isEmpty) return;
+
+    while (_pages.length < _currentPage + result.pages.length) {
+      _pages.add([]);
+      _pageOrientations.add(_pageOrientations[_currentPage]);
+      _pageTemplates.add(TemplateType.blank);
+      _pageBackgrounds.add(Colors.white);
+    }
 
     setState(() {
-      _pages[_currentPage].clear();
-      _pages[_currentPage].addAll(result.elements);
+      for (int i = 0; i < result.pages.length; i++) {
+        final pageIndex = _currentPage + i;
+        _pages[pageIndex].clear();
+        _pages[pageIndex].addAll(result.pages[i]);
+        _pageTemplates[pageIndex] = TemplateType.blank;
+        _pageOrientations[pageIndex] = _pageOrientations[_currentPage];
+      }
     });
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(result.message ?? 'Actividad de simetrías generada'),
+        content: Text(result.message),
       ),
     );
   }
@@ -1619,57 +2032,64 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
   }
 
   Future<void> _generateInstructionsActivity() async {
-    // Mostrar diálogo de configuración
-    final config = await showDialog<Map<String, dynamic>>(
+    final images = _canvasImages
+        .where(
+          (element) =>
+              element.type == CanvasElementType.networkImage ||
+              element.type == CanvasElementType.localImage ||
+              element.type == CanvasElementType.pictogramCard,
+        )
+        .toList();
+
+    if (images.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Añade al menos una imagen primero')),
+      );
+      return;
+    }
+
+    final config = await showDialog<Map<String, int>>(
       context: context,
       builder: (context) => _InstructionsConfigDialog(),
     );
 
     if (config == null) return;
 
-    final instructions =
-        config['instructions'] as List<instructions_activity.InstructionItem>;
-
     // Mostrar indicador de carga
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Generando actividad de instrucciones...')),
     );
 
-    try {
-      final result = await instructions_activity.generateInstructionsActivity(
-        instructions: instructions,
-        arasaacService: _arasaacService,
-        isLandscape: _pageOrientations[_currentPage],
-        a4WidthPts: _a4WidthPts,
-        a4HeightPts: _a4HeightPts,
-      );
+    final result = instructions_activity.generateInstructionsActivity(
+      images: images,
+      isLandscape: _pageOrientations[_currentPage],
+      a4WidthPts: _a4WidthPts,
+      a4HeightPts: _a4HeightPts,
+      minTargets: config['min'] ?? 1,
+      maxTargets: config['max'] ?? 3,
+    );
 
-      if (result.elements.isEmpty || result.elements.length == 1) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('No se pudieron generar las instrucciones'),
-          ),
-        );
-        return;
-      }
-
-      setState(() {
-        _pages[_currentPage].clear();
-        _pages[_currentPage].addAll(result.elements);
-      });
-
+    if (result.elements.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            result.message ?? 'Actividad de instrucciones generada',
-          ),
+        const SnackBar(
+          content: Text('No se pudieron generar las instrucciones'),
         ),
       );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Error al generar la actividad')),
-      );
+      return;
     }
+
+    setState(() {
+      _pages[_currentPage].clear();
+      _pages[_currentPage].addAll(result.elements);
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          result.message ?? 'Actividad de instrucciones generada',
+        ),
+      ),
+    );
   }
 
   Future<void> _addLocalImage() async {
@@ -2972,8 +3392,9 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
         );
       }
 
-      // Créditos verticales
-      if (_showArasaacCredit) {
+      final allowCredits = _pageTemplates[pageIndex] != TemplateType.writingPractice;
+      // Créditos verticales (omitidos en práctica de escritura)
+      if (allowCredits && _showArasaacCredit) {
         widgets.add(
           pw.Positioned(
             left: 15,
@@ -2993,7 +3414,7 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
           ),
         );
       }
-      if (_showSoyVisualCredit) {
+      if (allowCredits && _showSoyVisualCredit) {
         widgets.add(
           pw.Positioned(
             left: pageWidth - 15,
@@ -3238,37 +3659,8 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
           },
         );
       case TemplateType.writingPractice:
-        return pw.CustomPaint(
-          size: PdfPoint(width, height),
-          painter: (canvas, size) {
-            final spacing = 40.0;
-            final mainLineWidth = 2.0;
-            final dashLength = 6.0;
-            final dashGap = 6.0;
-            canvas.setStrokeColor(PdfColors.grey500);
-            for (double y = spacing; y < size.y; y += spacing) {
-              // Línea superior (punteada)
-              double x = 0;
-              while (x < size.x) {
-                canvas
-                  ..moveTo(x, y - 10)
-                  ..lineTo(x + dashLength, y - 10);
-                x += dashLength + dashGap;
-              }
-              // Línea media
-              canvas
-                ..setLineWidth(1)
-                ..moveTo(0, y)
-                ..lineTo(size.x, y);
-            }
-            // Última línea base gruesa
-            canvas
-              ..setLineWidth(mainLineWidth)
-              ..moveTo(0, size.y - spacing)
-              ..lineTo(size.x, size.y - spacing)
-              ..strokePath();
-          },
-        );
+        // Sin pauta de fondo; las líneas se añaden en los elementos
+        return pw.Container();
       case TemplateType.countingPractice:
         return pw.CustomPaint(
           size: PdfPoint(width, height),
@@ -4501,6 +4893,7 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
         return _buildConfigPanel();
       case SidebarMode.creador:
         return ActivityCreatorPanel(
+          onActivityPack: _generateActivityPack,
           onShadowMatching: _generateShadowMatchingActivity,
           onPuzzle: _generatePuzzleActivity,
           onWritingPractice: _generateWritingPracticeActivity,
@@ -5879,23 +6272,7 @@ class _InstructionsConfigDialog extends StatefulWidget {
 }
 
 class _InstructionsConfigDialogState extends State<_InstructionsConfigDialog> {
-  final List<_InstructionItemConfig> _items = [
-    _InstructionItemConfig(word: 'casa', quantity: 1),
-  ];
-
-  void _addItem() {
-    setState(() {
-      _items.add(_InstructionItemConfig(word: '', quantity: 1));
-    });
-  }
-
-  void _removeItem(int index) {
-    if (_items.length > 1) {
-      setState(() {
-        _items.removeAt(index);
-      });
-    }
-  }
+  RangeValues _targetRange = const RangeValues(1, 3);
 
   @override
   Widget build(BuildContext context) {
@@ -5907,76 +6284,37 @@ class _InstructionsConfigDialogState extends State<_InstructionsConfigDialog> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Configura los objetos a rodear:',
+              'Usa los objetos del canvas',
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
             ),
             const SizedBox(height: 8),
             Text(
-              'La hoja se llenará automáticamente con dibujos mezclados',
+              'Selecciona el rango de cantidad que deben encontrarse.',
               style: TextStyle(fontSize: 12, color: Colors.grey[600]),
             ),
             const SizedBox(height: 16),
-            ..._items.asMap().entries.map((entry) {
-              final index = entry.key;
-              final item = entry.value;
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 12.0),
-                child: Row(
-                  children: [
-                    Expanded(
-                      flex: 3,
-                      child: TextField(
-                        decoration: const InputDecoration(
-                          border: OutlineInputBorder(),
-                          labelText: 'Objeto',
-                          hintText: 'ej: casa, árbol',
-                        ),
-                        onChanged: (value) {
-                          item.word = value;
-                        },
-                        controller: TextEditingController(text: item.word)
-                          ..selection = TextSelection.collapsed(
-                            offset: item.word.length,
-                          ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      flex: 2,
-                      child: TextField(
-                        decoration: const InputDecoration(
-                          border: OutlineInputBorder(),
-                          labelText: 'Cantidad',
-                        ),
-                        keyboardType: TextInputType.number,
-                        onChanged: (value) {
-                          item.quantity = int.tryParse(value) ?? 1;
-                        },
-                        controller:
-                            TextEditingController(
-                                text: item.quantity.toString(),
-                              )
-                              ..selection = TextSelection.collapsed(
-                                offset: item.quantity.toString().length,
-                              ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    IconButton(
-                      icon: const Icon(Icons.delete, color: Colors.red),
-                      onPressed: _items.length > 1
-                          ? () => _removeItem(index)
-                          : null,
-                    ),
-                  ],
-                ),
-              );
-            }),
-            const SizedBox(height: 8),
-            ElevatedButton.icon(
-              onPressed: _addItem,
-              icon: const Icon(Icons.add),
-              label: const Text('Añadir objeto'),
+            const Text('Cantidad de cada objetivo (mín-máx)'),
+            RangeSlider(
+              values: _targetRange,
+              min: 1,
+              max: 10,
+              divisions: 9,
+              labels: RangeLabels(
+                _targetRange.start.round().toString(),
+                _targetRange.end.round().toString(),
+              ),
+              onChanged: (values) {
+                if (values.end - values.start >= 0) {
+                  setState(() => _targetRange = values);
+                }
+              },
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Mín: ${_targetRange.start.round()}'),
+                Text('Máx: ${_targetRange.end.round()}'),
+              ],
             ),
           ],
         ),
@@ -5988,37 +6326,16 @@ class _InstructionsConfigDialogState extends State<_InstructionsConfigDialog> {
         ),
         ElevatedButton(
           onPressed: () {
-            final validItems = _items
-                .where(
-                  (item) => item.word.trim().isNotEmpty && item.quantity > 0,
-                )
-                .toList();
-            if (validItems.isEmpty) return;
-
-            final instructions = validItems
-                .map(
-                  (item) => instructions_activity.InstructionItem(
-                    word: item.word.trim(),
-                    quantity: item.quantity,
-                  ),
-                )
-                .toList();
-
-            Navigator.of(context).pop({'instructions': instructions});
+            Navigator.of(context).pop({
+              'min': _targetRange.start.round(),
+              'max': _targetRange.end.round(),
+            });
           },
           child: const Text('Generar'),
         ),
       ],
     );
   }
-}
-
-// Clase auxiliar para configuración de items de instrucciones
-class _InstructionItemConfig {
-  String word;
-  int quantity;
-
-  _InstructionItemConfig({required this.word, required this.quantity});
 }
 
 // Diálogo de configuración para vocabulario por sílaba
