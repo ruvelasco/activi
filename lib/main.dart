@@ -3145,12 +3145,14 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
                 top: element.position.dy,
                 child: pw.Transform.rotate(
                   angle: element.rotation,
+                  alignment: pw.Alignment.center,
                   child: pw.Transform(
                     transform: Matrix4.diagonal3Values(
                       element.flipHorizontal ? -1.0 : 1.0,
                       element.flipVertical ? -1.0 : 1.0,
                       1.0,
                   ),
+                  alignment: pw.Alignment.center,
                   child: pw.Container(
                     width: textWidth,
                     padding: pw.EdgeInsets.zero,
@@ -3201,12 +3203,14 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
                 bottom: bottom,
                 child: pw.Transform.rotate(
                   angle: element.rotation,
+                  alignment: pw.Alignment.center,
                   child: pw.Transform(
                     transform: Matrix4.diagonal3Values(
                       element.flipHorizontal ? -1.0 : 1.0,
                       element.flipVertical ? -1.0 : 1.0,
                       1.0,
                     ),
+                    alignment: pw.Alignment.center,
                     child: pw.Container(
                       width: imgWidth,
                       height: imgHeight,
@@ -3261,12 +3265,14 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
                     height: cardHeight,
                     child: pw.Transform.rotate(
                       angle: element.rotation,
+                      alignment: pw.Alignment.center,
                       child: pw.Transform(
                         transform: Matrix4.diagonal3Values(
                           element.flipHorizontal ? -1.0 : 1.0,
                           element.flipVertical ? -1.0 : 1.0,
                           1.0,
                         ),
+                        alignment: pw.Alignment.center,
                         child: pw.Container(
                           decoration: pw.BoxDecoration(
                             color: PdfColors.white,
@@ -3336,6 +3342,7 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
                   bottom: bottom,
                   child: pw.Transform.rotate(
                     angle: element.rotation,
+                    alignment: pw.Alignment.center,
                     child: pw.Opacity(
                       opacity: 0.3,
                       child: pw.Container(
@@ -3378,6 +3385,7 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
                 );
               }
 
+              // Aplicar transformaciones con alignment center para que roten desde el centro
               widgets.add(
                 pw.Positioned(
                   left: element.position.dx,
@@ -3387,12 +3395,14 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
                     height: imgHeight,
                     child: pw.Transform.rotate(
                       angle: element.rotation,
+                      alignment: pw.Alignment.center,
                       child: pw.Transform(
                         transform: Matrix4.diagonal3Values(
                           element.flipHorizontal ? -1.0 : 1.0,
                           element.flipVertical ? -1.0 : 1.0,
                           1.0,
                         ),
+                        alignment: pw.Alignment.center,
                         child: imageWidget,
                       ),
                     ),
