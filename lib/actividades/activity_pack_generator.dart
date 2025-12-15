@@ -44,12 +44,22 @@ class ActivityPackGenerator {
     required bool isLandscape,
     required double a4WidthPts,
     required double a4HeightPts,
+    void Function(int current, int total, String activityName)? onProgress,
   }) async {
     final List<List<CanvasImage>> allPages = [];
     final List<String> generatedActivities = [];
     final List<String> errors = [];
 
-    for (final activityType in config.selectedActivities) {
+    final activitiesList = config.selectedActivities.toList();
+    final totalActivities = activitiesList.length;
+
+    for (int i = 0; i < activitiesList.length; i++) {
+      final activityType = activitiesList[i];
+      final activityName = getActivityName(activityType);
+
+      // Reportar progreso antes de generar
+      onProgress?.call(i, totalActivities, activityName);
+
       try {
         final pages = await _generateSingleActivity(
           activityType: activityType,
@@ -61,11 +71,14 @@ class ActivityPackGenerator {
 
         if (pages != null && pages.isNotEmpty) {
           allPages.addAll(pages);
-          generatedActivities.add(getActivityName(activityType));
+          generatedActivities.add(activityName);
         }
       } catch (e) {
-        errors.add('${getActivityName(activityType)}: $e');
+        errors.add('$activityName: $e');
       }
+
+      // Reportar progreso después de generar
+      onProgress?.call(i + 1, totalActivities, activityName);
     }
 
     final message = generatedActivities.isEmpty

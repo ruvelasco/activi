@@ -36,6 +36,7 @@ import 'actividades/phrases_activity.dart' as phrases_activity;
 import 'actividades/card_activity.dart' as card_activity;
 import 'actividades/activity_pack_generator.dart';
 import 'widgets/activity_pack_config_dialog.dart';
+import 'widgets/activity_pack_progress_dialog.dart';
 
 void main() {
   runApp(const MyApp());
@@ -866,10 +867,15 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
     );
 
     if (config == null) return;
-
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Generando ${config.title}...')),
+
+    // Mostrar diálogo de progreso inicial
+    ActivityPackProgressDialog.show(
+      context: context,
+      title: config.title,
+      currentActivity: 0,
+      totalActivities: config.selectedActivities.length,
+      currentActivityName: 'Iniciando...',
     );
 
     try {
@@ -879,9 +885,23 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
         isLandscape: _pageOrientations[_currentPage],
         a4WidthPts: _a4WidthPts,
         a4HeightPts: _a4HeightPts,
+        onProgress: (current, total, activityName) {
+          if (!mounted) return;
+          // Actualizar el diálogo de progreso
+          ActivityPackProgressDialog.update(
+            context: context,
+            title: config.title,
+            currentActivity: current,
+            totalActivities: total,
+            currentActivityName: activityName,
+          );
+        },
       );
 
       if (!mounted) return;
+
+      // Cerrar diálogo de progreso
+      ActivityPackProgressDialog.dismiss(context);
 
       if (result.pages.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -912,6 +932,10 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
       );
     } catch (e) {
       if (!mounted) return;
+
+      // Cerrar diálogo de progreso en caso de error
+      ActivityPackProgressDialog.dismiss(context);
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error al generar el pack: $e')),
       );
