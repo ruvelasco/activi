@@ -28,6 +28,48 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// Endpoint temporal para ejecutar migraciones (SOLO DESARROLLO)
+app.post('/migrations/run', async (req, res) => {
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(403).json({ message: 'No permitido en producción sin autenticación' });
+  }
+
+  try {
+    // Crear tabla activity_type
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS activity_type (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL UNIQUE,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        info_tooltip TEXT NOT NULL DEFAULT '',
+        icon_name TEXT NOT NULL DEFAULT 'help_outline',
+        color_value INTEGER NOT NULL DEFAULT 4280391411,
+        "order" INTEGER NOT NULL DEFAULT 999,
+        is_new BOOLEAN NOT NULL DEFAULT false,
+        is_highlighted BOOLEAN NOT NULL DEFAULT false,
+        is_enabled BOOLEAN NOT NULL DEFAULT true,
+        category TEXT,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+      )
+    `);
+
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_activity_type_order ON activity_type("order")
+    `);
+
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_activity_type_enabled ON activity_type(is_enabled)
+    `);
+
+    return res.json({ message: 'Migraciones ejecutadas correctamente' });
+  } catch (err) {
+    console.error('Migration error', err);
+    return res.status(500).json({ message: 'Error ejecutando migraciones', error: err.message });
+  }
+});
+
 const createToken = (user) =>
   jwt.sign({ sub: user.id, email: user.email }, jwtSecret, {
     expiresIn: '7d',
