@@ -5,10 +5,14 @@ import 'package:flutter/material.dart';
 class ClassificationActivityResult {
   final List<CanvasImage> categoriesPage; // Página con las 2 categorías
   final List<CanvasImage> objectsPage; // Página con los 10 objetos recortables
+  final String title;
+  final String instructions;
 
   ClassificationActivityResult({
     required this.categoriesPage,
     required this.objectsPage,
+    this.title = 'CLASIFICAR',
+    this.instructions = 'Recorta y clasifica los objetos en las categorías',
   });
 }
 
@@ -32,13 +36,18 @@ ClassificationActivityResult generateClassificationActivity({
   // ========== PÁGINA 1: CATEGORÍAS ==========
   final categoriesPage = <CanvasImage>[];
 
+  // NOTA: Títulos e instrucciones se manejan automáticamente por el sistema de _pageTitles/_pageInstructions
+  // NO los agregamos aquí para evitar duplicación en el PDF
+
   // Cada cuadrado ocupa la mitad de la hoja
+  const templateHeaderSpace = 120.0;
   final margin = 40.0;
   final spacing = 20.0; // Espacio entre los dos cuadrados
 
   // Ancho de cada cuadrado: mitad de la página menos márgenes
   final categoryBoxWidth = (pageWidth - (margin * 2) - spacing) / 2;
-  final categoryBoxHeight = pageHeight - (margin * 2);
+  // Altura disponible después del header
+  final categoryBoxHeight = pageHeight - templateHeaderSpace - (margin * 2);
 
   // Tamaño de la imagen de categoría (más grande)
   final categoryImageSize = categoryBoxWidth * 0.6;
@@ -46,7 +55,7 @@ ClassificationActivityResult generateClassificationActivity({
   for (int i = 0; i < 2 && i < categoryImages.length; i++) {
     final categoryImage = categoryImages[i];
     final xPos = margin + (i * (categoryBoxWidth + spacing));
-    final yPos = margin;
+    final yPos = templateHeaderSpace + margin;
 
     // Añadir el cuadrado de fondo
     categoriesPage.add(
@@ -79,6 +88,9 @@ ClassificationActivityResult generateClassificationActivity({
   // ========== PÁGINA 2: OBJETOS RECORTABLES ==========
   final objectsPage = <CanvasImage>[];
 
+  // NOTA: Títulos e instrucciones se manejan automáticamente por el sistema de _pageTitles/_pageInstructions
+  // NO los agregamos aquí para evitar duplicación en el PDF
+
   // Configuración de la cuadrícula
   final cols = 4; // 4 columnas
   final rows = 5; // 5 filas = 20 objetos
@@ -90,9 +102,10 @@ ClassificationActivityResult generateClassificationActivity({
   final gridWidth = (cols * objectSize) + ((cols - 1) * gridSpacingX);
   final gridHeight = (rows * objectSize) + ((rows - 1) * gridSpacingY);
 
-  // Centrar la cuadrícula
+  // Centrar la cuadrícula (considerando el espacio del header)
   final gridStartX = (pageWidth - gridWidth) / 2;
-  final gridStartY = (pageHeight - gridHeight) / 2;
+  final availableHeight = pageHeight - templateHeaderSpace;
+  final gridStartY = templateHeaderSpace + (availableHeight - gridHeight) / 2;
 
   // Mezclar las URLs para distribuir aleatoriamente
   final shuffledUrls = List<String>.from(relatedImageUrls)..shuffle(random);

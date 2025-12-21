@@ -7,11 +7,15 @@ class CountingActivityResult {
   final List<List<CanvasImage>> pages;
   final TemplateType? template;
   final String? message;
+  final String title;
+  final String instructions;
 
   CountingActivityResult({
     required this.pages,
     this.template,
     this.message,
+    this.title = 'CONTAR',
+    this.instructions = 'Cuenta los objetos y escribe el número',
   });
 }
 
@@ -45,6 +49,7 @@ CountingActivityResult generateCountingActivity({
   if (maxCount < minCount) maxCount = minCount;
 
   const margin = 40.0;
+  const templateHeaderSpace = 120.0; // Espacio para título (60pt) + instrucciones (50pt) + margen
 
   int cols;
   int rows;
@@ -81,16 +86,22 @@ CountingActivityResult generateCountingActivity({
     }
     final result = <CanvasImage>[];
 
+    // NOTA: Títulos e instrucciones se manejan automáticamente por el sistema de _pageTitles/_pageInstructions
+    // NO los agregamos aquí para evitar duplicación en el PDF
+
     final effectiveRows = (pageImages.length / cols).ceil().clamp(1, rows);
     final cellWidth = (canvasWidth - margin * 2) / cols;
-    final cellHeight = (canvasHeight - margin * 2) / effectiveRows;
+    // Restar el espacio del header del área disponible
+    final availableHeight = canvasHeight - templateHeaderSpace - margin * 2;
+    final cellHeight = availableHeight / effectiveRows;
 
     for (int i = 0; i < pageImages.length; i++) {
       final col = i % cols;
       final row = i ~/ cols;
 
       final cellX = margin + col * cellWidth;
-      final cellY = margin + row * cellHeight;
+      // Comenzar el contenido después del espacio reservado para título/instrucciones
+      final cellY = templateHeaderSpace + margin + row * cellHeight;
 
       final originalImage = pageImages[i];
 

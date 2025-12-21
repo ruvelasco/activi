@@ -5,8 +5,15 @@ import '../models/canvas_image.dart';
 class SymmetryActivityResult {
   final List<List<CanvasImage>> pages;
   final String message;
+  final String title;
+  final String instructions;
 
-  SymmetryActivityResult({required this.pages, required this.message});
+  SymmetryActivityResult({
+    required this.pages,
+    required this.message,
+    this.title = 'SIMETRÍAS',
+    this.instructions = 'Busca los objetos iguales al modelo',
+  });
 }
 
 SymmetryActivityResult generateSymmetryActivity({
@@ -34,6 +41,7 @@ SymmetryActivityResult generateSymmetryActivity({
   const modelBoxSize = 130.0;
   const modelSize = 100.0;
   const gridPadding = 20.0;
+  const templateHeaderSpace = 120.0; // Espacio para título (60pt) + instrucciones (50pt) + margen
 
   final pages = <List<CanvasImage>>[];
 
@@ -54,19 +62,11 @@ SymmetryActivityResult generateSymmetryActivity({
     ];
     final modelTransform = availableTransforms[modelTransformSeed % availableTransforms.length];
 
-    pageElements.add(
-      CanvasImage.text(
-        id: 'symmetry_title_$pageIndex',
-        text: 'Busca los objetos iguales al modelo',
-        position: Offset(margin, margin / 2),
-        fontSize: 20,
-        textColor: Colors.black,
-        fontFamily: 'Roboto',
-        isBold: true,
-      ).copyWith(width: canvasWidth - margin * 2),
-    );
+    // NOTA: Títulos e instrucciones se manejan automáticamente por el sistema de _pageTitles/_pageInstructions
+    // NO los agregamos aquí para evitar duplicación en el PDF
 
-    final modelBoxY = margin + 20;
+    // Comenzar el contenido después del espacio reservado para título/instrucciones
+    final modelBoxY = templateHeaderSpace + margin;
     final modelBoxX = (canvasWidth - modelBoxSize) / 2;
 
     pageElements.add(

@@ -2,9 +2,22 @@ import 'package:flutter/material.dart';
 
 import '../models/canvas_image.dart';
 import '../services/arasaac_service.dart';
-import 'activity_result.dart';
 
-Future<GeneratedActivity> generateSyllableVocabularyActivity({
+class SyllableVocabularyActivityResult {
+  final List<List<CanvasImage>> pages;
+  final String title;
+  final String instructions;
+  final String? message;
+
+  SyllableVocabularyActivityResult({
+    required this.pages,
+    this.title = 'VOCABULARIO POR SÍLABAS',
+    required this.instructions,
+    this.message,
+  });
+}
+
+Future<SyllableVocabularyActivityResult> generateSyllableVocabularyActivity({
   required String syllable,
   required ArasaacService arasaacService,
   required bool isLandscape,
@@ -14,46 +27,29 @@ Future<GeneratedActivity> generateSyllableVocabularyActivity({
   String syllablePosition = 'start',
   bool usePictograms = true,
 }) async {
-  final result = <CanvasImage>[];
   final canvasWidth = isLandscape ? a4HeightPts : a4WidthPts;
+  final canvasHeight = isLandscape ? a4WidthPts : a4HeightPts;
   const margin = 40.0;
+  const templateHeaderSpace = 140.0;
 
   final titleText = syllablePosition == 'start'
       ? 'Palabras que empiezan por: ${syllable.toUpperCase()}'
       : 'Palabras que terminan en: ${syllable.toUpperCase()}';
-
-  result.add(
-    CanvasImage.text(
-      id: 'syllable_title',
-      text: titleText,
-      position: const Offset(margin, margin),
-      fontSize: 24,
-      textColor: Colors.black,
-      fontFamily: 'Roboto',
-      scale: 1.0,
-    ),
-  );
 
   // Obtener palabras que coincidan con la sílaba desde la API de ARASAAC
   final words = await arasaacService.getWordsBySyllable(
     syllable: syllable,
     position: syllablePosition,
     limit: maxWords * 3, // Obtener más palabras para asegurar que encontremos suficientes con pictogramas
+    coreVocabularyOnly: true, // Filtrar solo vocabulario nuclear
   );
 
   if (words.isEmpty) {
-    result.add(
-      CanvasImage.text(
-        id: 'no_words',
-        text: 'No se encontraron palabras con la sílaba "$syllable"',
-        position: const Offset(margin, margin + 60),
-        fontSize: 16,
-        textColor: Colors.orange,
-        fontFamily: 'Roboto',
-        scale: 1.0,
-      ),
+    return SyllableVocabularyActivityResult(
+      pages: [],
+      instructions: titleText,
+      message: 'No se encontraron palabras con la sílaba "$syllable"',
     );
-    return GeneratedActivity(elements: result);
   }
 
   // Buscar pictogramas para las palabras encontradas
@@ -71,71 +67,85 @@ Future<GeneratedActivity> generateSyllableVocabularyActivity({
   }
 
   if (pictograms.isEmpty) {
-    result.add(
-      CanvasImage.text(
-        id: 'no_pictograms',
-        text: 'No se encontraron ${usePictograms ? "pictogramas" : "dibujos"} para las palabras',
-        position: const Offset(margin, margin + 60),
-        fontSize: 16,
-        textColor: Colors.orange,
-        fontFamily: 'Roboto',
-        scale: 1.0,
-      ),
+    return SyllableVocabularyActivityResult(
+      pages: [],
+      instructions: titleText,
+      message: 'No se encontraron ${usePictograms ? "pictogramas" : "dibujos"} para las palabras',
     );
-    return GeneratedActivity(elements: result);
   }
 
-  // Calcular el número de columnas según la cantidad de imágenes
-  final cols = maxWords <= 4 ? 2 : (maxWords <= 9 ? 3 : 4);
+  // Calcular cuántos elementos caben por página
+  const cols = 3;
   const gap = 20.0;
+  const cellSize = 140.0;
   final textHeight = usePictograms ? 40.0 : 0.0;
 
-  // Ajustar el tamaño de celda según el número de imágenes
-  final cellSize = maxWords <= 4 ? 150.0 : (maxWords <= 9 ? 140.0 : 120.0);
+  // Calcular cuántas filas caben en una página
+  final availableHeight = canvasHeight - templateHeaderSpace - margin * 2;
+  final maxRows = (availableHeight / (cellSize + gap + textHeight)).floor();
+  final itemsPerPage = cols * maxRows;
 
-  final gridWidth = cols * cellSize + (cols - 1) * gap;
-  final gridStartX = (canvasWidth - gridWidth) / 2;
-  final gridStartY = margin + 60;
+  // Dividir los pictogramas en páginas
+  final List<List<CanvasImage>> allPages = [];
 
-  for (int i = 0; i < pictograms.length; i++) {
-    final col = i % cols;
-    final row = i ~/ cols;
+  for (int pageIndex = 0; pageIndex * itemsPerPage < pictograms.length; pageIndex++) {
+    final pageElements = <CanvasImage>[];
 
-    final xPos = gridStartX + col * (cellSize + gap);
-    final yPos = gridStartY + row * (cellSize + gap + textHeight);
+    // NOTA: Títulos e instrucciones se manejan automáticamente por el sistema de _pageTitles/_pageInstructions
+    // NO los agregamos aquí para evitar duplicación en el PDF
 
-    final pictogram = pictograms[i];
-    final word = foundWords[i];
+    // Calcular índices para esta página
+    final startIdx = pageIndex * itemsPerPage;
+    final endIdx = ((pageIndex + 1) * itemsPerPage).clamp(0, pictograms.length);
+    final pagePictograms = pictograms.sublist(startIdx, endIdx);
+    final pageWords = foundWords.sublist(startIdx, endIdx);
 
-    if (usePictograms) {
-      // Pictograma con marco y texto
-      result.add(
-        CanvasImage.pictogramCard(
-          id: 'pictogram_$i',
-          imageUrl: pictogram.imageUrl,
-          text: word,
-          position: Offset(xPos, yPos),
-          scale: 1.0,
-          fontSize: 18,
-          textColor: Colors.black,
-        ).copyWith(width: cellSize, height: cellSize + textHeight),
-      );
-    } else {
-      // Dibujo sin marco ni texto
-      result.add(
-        CanvasImage.networkImage(
-          id: 'drawing_$i',
-          imageUrl: pictogram.imageUrl,
-          position: Offset(xPos, yPos),
-          scale: 1.0,
-        ).copyWith(width: cellSize, height: cellSize),
-      );
+    // Calcular posición inicial de la cuadrícula
+    final gridWidth = cols * cellSize + (cols - 1) * gap;
+    final gridStartX = (canvasWidth - gridWidth) / 2;
+    final gridStartY = templateHeaderSpace + margin;
+
+    // Añadir pictogramas a la página
+    for (int i = 0; i < pagePictograms.length; i++) {
+      final col = i % cols;
+      final row = i ~/ cols;
+
+      final xPos = gridStartX + col * (cellSize + gap);
+      final yPos = gridStartY + row * (cellSize + gap + textHeight);
+
+      final pictogram = pagePictograms[i];
+      final word = pageWords[i];
+
+      if (usePictograms) {
+        pageElements.add(
+          CanvasImage.pictogramCard(
+            id: 'pictogram_${pageIndex}_$i',
+            imageUrl: pictogram.imageUrl,
+            text: word,
+            position: Offset(xPos, yPos),
+            scale: 1.0,
+            fontSize: 16,
+            textColor: Colors.black,
+          ).copyWith(width: cellSize, height: cellSize + textHeight),
+        );
+      } else {
+        pageElements.add(
+          CanvasImage.networkImage(
+            id: 'drawing_${pageIndex}_$i',
+            imageUrl: pictogram.imageUrl,
+            position: Offset(xPos, yPos),
+            scale: 1.0,
+          ).copyWith(width: cellSize, height: cellSize),
+        );
+      }
     }
+
+    allPages.add(pageElements);
   }
 
-  return GeneratedActivity(
-    elements: result,
-    message:
-        'Actividad generada con ${pictograms.length} ${usePictograms ? "pictogramas" : "dibujos"}',
+  return SyllableVocabularyActivityResult(
+    pages: allPages,
+    instructions: titleText,
+    message: 'Actividad generada con ${pictograms.length} ${usePictograms ? "pictogramas" : "dibujos"} en ${allPages.length} página${allPages.length > 1 ? "s" : ""}',
   );
 }

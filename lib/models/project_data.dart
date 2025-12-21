@@ -20,6 +20,7 @@ class ProjectData {
   final String? logoPath;
   final Offset logoPosition;
   final double logoSize;
+  final CanvasImage? coverImage; // Imagen de portada del proyecto
 
   ProjectData({
     required this.id,
@@ -37,6 +38,7 @@ class ProjectData {
     required this.logoPath,
     required this.logoPosition,
     required this.logoSize,
+    this.coverImage,
   });
 
   ProjectData copyWith({
@@ -55,6 +57,7 @@ class ProjectData {
     String? logoPath,
     Offset? logoPosition,
     double? logoSize,
+    CanvasImage? coverImage,
   }) {
     return ProjectData(
       id: id ?? this.id,
@@ -72,6 +75,7 @@ class ProjectData {
       logoPath: logoPath ?? this.logoPath,
       logoPosition: logoPosition ?? this.logoPosition,
       logoSize: logoSize ?? this.logoSize,
+      coverImage: coverImage ?? this.coverImage,
     );
   }
 
@@ -94,6 +98,7 @@ class ProjectData {
       'logoPath': logoPath,
       'logoPosition': {'dx': logoPosition.dx, 'dy': logoPosition.dy},
       'logoSize': logoSize,
+      'coverImage': coverImage?.toJson(),
     };
   }
 
@@ -138,6 +143,9 @@ class ProjectData {
         (json['logoPosition']?['dy'] as num?)?.toDouble() ?? 20,
       ),
       logoSize: (json['logoSize'] as num?)?.toDouble() ?? 50.0,
+      coverImage: json['coverImage'] != null
+          ? CanvasImage.fromJson(json['coverImage'] as Map<String, dynamic>)
+          : null,
     );
   }
 }

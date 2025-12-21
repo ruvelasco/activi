@@ -5,8 +5,15 @@ import '../models/canvas_image.dart';
 class SeriesActivityResult {
   final List<List<CanvasImage>> pages;
   final String message;
+  final String title;
+  final String instructions;
 
-  SeriesActivityResult({required this.pages, required this.message});
+  SeriesActivityResult({
+    required this.pages,
+    required this.message,
+    this.title = 'SERIES',
+    this.instructions = 'Continúa la serie completando los huecos',
+  });
 }
 
 SeriesActivityResult generateSeriesActivity({
@@ -33,14 +40,16 @@ SeriesActivityResult generateSeriesActivity({
   const margin = 30.0;
   const cellSize = 55.0;
   const gap = 10.0;
-  const titleHeight = 26.0;
+  const templateHeaderSpace = 120.0; // Espacio para título (60pt) + instrucciones (50pt) + margen
   const betweenRows = 10.0;
 
   final slotsPerSeries = blanksToFill + 2;
   final blockHeight = cellSize * 2 + betweenRows + 26;
 
+  // Calcular series por página usando el espacio disponible después del header
+  final availableHeight = canvasHeight - templateHeaderSpace - margin;
   final autoSeriesPerPage =
-      ((canvasHeight - margin - titleHeight) / blockHeight).floor().clamp(1, 6);
+      (availableHeight / blockHeight).floor().clamp(1, 6);
   final effectiveSeriesPerPage = seriesPerPage > 0 ? seriesPerPage : autoSeriesPerPage;
 
   final totalSeriesFromImages = (items.length / 2).ceil();
@@ -55,17 +64,8 @@ SeriesActivityResult generateSeriesActivity({
   for (int pageIndex = 0; pageIndex < neededPages; pageIndex++) {
     final pageElements = <CanvasImage>[];
 
-    pageElements.add(
-      CanvasImage.text(
-        id: 'series_title_$pageIndex',
-        text: 'Continúa la serie',
-        position: Offset(margin, margin / 2),
-        fontSize: 24,
-        textColor: Colors.black,
-        fontFamily: 'Roboto',
-        isBold: true,
-      ).copyWith(width: canvasWidth - margin * 2),
-    );
+    // NOTA: Títulos e instrucciones se manejan automáticamente por el sistema de _pageTitles/_pageInstructions
+    // NO los agregamos aquí para evitar duplicación en el PDF
 
     final seriesStartIndex = pageIndex * effectiveSeriesPerPage;
     final seriesOnThisPage = (seriesStartIndex + effectiveSeriesPerPage) <= seriesTotal
@@ -82,7 +82,8 @@ SeriesActivityResult generateSeriesActivity({
         cutoutSamples[key] = img;
       }
 
-      final baseY = margin + titleHeight + s * blockHeight;
+      // Comenzar el contenido después del espacio reservado para título/instrucciones
+      final baseY = templateHeaderSpace + margin + s * blockHeight;
 
       // Modelo
       for (int i = 0; i < modelLength; i++) {
@@ -164,17 +165,9 @@ SeriesActivityResult generateSeriesActivity({
   // Página de recortables
   if (cutoutCounts.isNotEmpty) {
     final cutoutElements = <CanvasImage>[];
-    cutoutElements.add(
-      CanvasImage.text(
-        id: 'cutouts_title',
-        text: 'Recorta las piezas',
-        position: Offset(margin, margin / 2),
-        fontSize: 24,
-        textColor: Colors.black,
-        fontFamily: 'Roboto',
-        isBold: true,
-      ).copyWith(width: canvasWidth - margin * 2),
-    );
+
+    // NOTA: Títulos e instrucciones se manejan automáticamente por el sistema de _pageTitles/_pageInstructions
+    // NO los agregamos aquí para evitar duplicación en el PDF
 
     const cutoutSize = 70.0;
     const cutoutGap = 12.0;

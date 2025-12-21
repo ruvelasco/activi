@@ -5,9 +5,22 @@ import 'package:http/http.dart' as http;
 
 import '../models/canvas_image.dart';
 import '../services/arasaac_service.dart';
-import 'activity_result.dart';
 
-Future<GeneratedActivity> generateSemanticFieldActivity({
+class SemanticFieldActivityResult {
+  final List<List<CanvasImage>> pages;
+  final String title;
+  final String instructions;
+  final String? message;
+
+  SemanticFieldActivityResult({
+    required this.pages,
+    this.title = 'CAMPO SEMÁNTICO',
+    this.instructions = 'Identifica las palabras relacionadas',
+    this.message,
+  });
+}
+
+Future<SemanticFieldActivityResult> generateSemanticFieldActivity({
   required List<CanvasImage> images,
   required ArasaacService arasaacService,
   required bool isLandscape,
@@ -22,11 +35,12 @@ Future<GeneratedActivity> generateSemanticFieldActivity({
           element.type == CanvasElementType.pictogramCard)
       .toList();
 
-  if (selectable.isEmpty) return GeneratedActivity(elements: []);
+  if (selectable.isEmpty) return SemanticFieldActivityResult(pages: []);
 
-  final result = <CanvasImage>[];
   final canvasWidth = isLandscape ? a4HeightPts : a4WidthPts;
+  final canvasHeight = isLandscape ? a4WidthPts : a4HeightPts;
   const margin = 40.0;
+  const templateHeaderSpace = 140.0;
 
   String? searchKeyword;
   int? pictogramId;
@@ -61,57 +75,26 @@ Future<GeneratedActivity> generateSemanticFieldActivity({
   }
 
   if (searchKeyword == null || searchKeyword.isEmpty) {
-    result.add(
-      CanvasImage.text(
-        id: 'no_keyword',
-        text: 'No se pudo obtener la palabra clave del pictograma',
-        position: const Offset(margin, margin + 60),
-        fontSize: 16,
-        textColor: Colors.orange,
-        fontFamily: 'Roboto',
-        scale: 1.0,
-      ),
+    return SemanticFieldActivityResult(
+      pages: [],
+      message: 'No se pudo obtener la palabra clave del pictograma',
     );
-    return GeneratedActivity(elements: result);
   }
 
   List<String> relatedWords =
       await arasaacService.getRelatedWords(searchKeyword);
 
   if (relatedWords.isEmpty) {
-    result.add(
-      CanvasImage.text(
-        id: 'no_wordnet',
-        text: 'No se encontraron palabras relacionadas para "$searchKeyword"',
-        position: const Offset(margin, margin + 60),
-        fontSize: 16,
-        textColor: Colors.orange,
-        fontFamily: 'Roboto',
-        scale: 1.0,
-      ),
+    return SemanticFieldActivityResult(
+      pages: [],
+      message: 'No se encontraron palabras relacionadas para "$searchKeyword"',
     );
-    return GeneratedActivity(elements: result);
   }
-
-  // Añadir título
-  result.add(
-    CanvasImage.text(
-      id: 'title',
-      text: 'Campo Semántico: ${searchKeyword.toUpperCase()}',
-      position: const Offset(margin, margin),
-      fontSize: 24,
-      textColor: Colors.black,
-      fontFamily: 'Roboto',
-      scale: 1.0,
-    ),
-  );
 
   relatedWords = relatedWords.take(maxWords).toList();
 
   final pictograms = <ArasaacImage>[];
   for (final word in relatedWords) {
-    // Nota: ARASAAC no distingue entre pictogramas y dibujos en el endpoint de búsqueda
-    // El parámetro usePictograms podría usarse en el futuro para filtrar por tipo de imagen
     final searchResults = await arasaacService.searchPictograms(word);
     if (searchResults.isNotEmpty) {
       pictograms.add(searchResults.first);
@@ -119,101 +102,83 @@ Future<GeneratedActivity> generateSemanticFieldActivity({
   }
 
   if (pictograms.isEmpty) {
-    result.add(
-      CanvasImage.text(
-        id: 'no_images',
-        text: 'No se encontraron ${usePictograms ? "pictogramas" : "dibujos"} para el campo semántico',
-        position: const Offset(margin, margin + 60),
-        fontSize: 16,
-        textColor: Colors.orange,
-        fontFamily: 'Roboto',
-        scale: 1.0,
-      ),
-    );
-    return GeneratedActivity(elements: result);
-  }
-
-  // Añadir el pictograma/dibujo inicial como referencia
-  const initialImageSize = 120.0;
-  final initialImageX = (canvasWidth - initialImageSize) / 2;
-  final initialImageY = margin + 50;
-
-  if (usePictograms) {
-    // Pictograma inicial con marco y texto
-    result.add(
-      CanvasImage.pictogramCard(
-        id: 'initial_pictogram',
-        imageUrl: selectable.first.imageUrl ?? '',
-        text: searchKeyword,
-        position: Offset(initialImageX, initialImageY),
-        scale: 1.0,
-        fontSize: 18,
-        textColor: Colors.black,
-      ).copyWith(width: initialImageSize, height: initialImageSize + 40),
-    );
-  } else {
-    // Dibujo inicial sin marco ni texto
-    result.add(
-      CanvasImage.networkImage(
-        id: 'initial_drawing',
-        imageUrl: selectable.first.imageUrl ?? '',
-        position: Offset(initialImageX, initialImageY),
-        scale: 1.0,
-      ).copyWith(width: initialImageSize, height: initialImageSize),
+    return SemanticFieldActivityResult(
+      pages: [],
+      message: 'No se encontraron ${usePictograms ? "pictogramas" : "dibujos"} para el campo semántico',
     );
   }
 
-  // Calcular el número de columnas según la cantidad de imágenes
-  final cols = maxWords <= 4 ? 2 : (maxWords <= 9 ? 3 : (maxWords <= 16 ? 4 : 5));
+  // Calcular cuántos elementos caben por página
+  const cols = 5;
   const gap = 10.0;
-  final textHeight = usePictograms ? 30.0 : 0.0; // Solo añadir espacio para texto si es pictograma
+  const cellSize = 100.0;
+  final textHeight = usePictograms ? 30.0 : 0.0;
 
-  // Ajustar el tamaño de celda según el número de imágenes
-  final cellSize = maxWords <= 4 ? 150.0 : (maxWords <= 9 ? 130.0 : (maxWords <= 16 ? 110.0 : 100.0));
+  // Calcular cuántas filas caben en una página
+  final availableHeight = canvasHeight - templateHeaderSpace - margin * 2;
+  final maxRows = (availableHeight / (cellSize + gap + textHeight)).floor();
+  final itemsPerPage = cols * maxRows;
 
-  final gridWidth = cols * cellSize + (cols - 1) * gap;
-  final gridStartX = (canvasWidth - gridWidth) / 2;
-  final gridStartY = initialImageY + (usePictograms ? initialImageSize + 40 : initialImageSize) + 40;
+  // Dividir los pictogramas en páginas
+  final List<List<CanvasImage>> allPages = [];
 
-  for (int i = 0; i < pictograms.length; i++) {
-    final col = i % cols;
-    final row = i ~/ cols;
+  for (int pageIndex = 0; pageIndex * itemsPerPage < pictograms.length; pageIndex++) {
+    final pageElements = <CanvasImage>[];
 
-    final xPos = gridStartX + col * (cellSize + gap);
-    final yPos = gridStartY + row * (cellSize + gap + textHeight);
+    // NOTA: Títulos e instrucciones se manejan automáticamente por el sistema de _pageTitles/_pageInstructions
+    // NO los agregamos aquí para evitar duplicación en el PDF
 
-    final pictogram = pictograms[i];
-    final word = relatedWords[i];
+    // Calcular índices para esta página
+    final startIdx = pageIndex * itemsPerPage;
+    final endIdx = ((pageIndex + 1) * itemsPerPage).clamp(0, pictograms.length);
+    final pagePictograms = pictograms.sublist(startIdx, endIdx);
+    final pageWords = relatedWords.sublist(startIdx, endIdx);
 
-    if (usePictograms) {
-      // Pictograma con marco y texto
-      result.add(
-        CanvasImage.pictogramCard(
-          id: 'pictogram_$i',
-          imageUrl: pictogram.imageUrl,
-          text: word,
-          position: Offset(xPos, yPos),
-          scale: 1.0,
-          fontSize: 16,
-          textColor: Colors.black,
-        ).copyWith(width: cellSize, height: cellSize + textHeight),
-      );
-    } else {
-      // Dibujo sin marco ni texto
-      result.add(
-        CanvasImage.networkImage(
-          id: 'drawing_$i',
-          imageUrl: pictogram.imageUrl,
-          position: Offset(xPos, yPos),
-          scale: 1.0,
-        ).copyWith(width: cellSize, height: cellSize),
-      );
+    // Calcular posición inicial de la cuadrícula
+    final gridWidth = cols * cellSize + (cols - 1) * gap;
+    final gridStartX = (canvasWidth - gridWidth) / 2;
+    final gridStartY = templateHeaderSpace + margin;
+
+    // Añadir pictogramas a la página
+    for (int i = 0; i < pagePictograms.length; i++) {
+      final col = i % cols;
+      final row = i ~/ cols;
+
+      final xPos = gridStartX + col * (cellSize + gap);
+      final yPos = gridStartY + row * (cellSize + gap + textHeight);
+
+      final pictogram = pagePictograms[i];
+      final word = pageWords[i];
+
+      if (usePictograms) {
+        pageElements.add(
+          CanvasImage.pictogramCard(
+            id: 'pictogram_${pageIndex}_$i',
+            imageUrl: pictogram.imageUrl,
+            text: word,
+            position: Offset(xPos, yPos),
+            scale: 1.0,
+            fontSize: 14,
+            textColor: Colors.black,
+          ).copyWith(width: cellSize, height: cellSize + textHeight),
+        );
+      } else {
+        pageElements.add(
+          CanvasImage.networkImage(
+            id: 'drawing_${pageIndex}_$i',
+            imageUrl: pictogram.imageUrl,
+            position: Offset(xPos, yPos),
+            scale: 1.0,
+          ).copyWith(width: cellSize, height: cellSize),
+        );
+      }
     }
+
+    allPages.add(pageElements);
   }
 
-  return GeneratedActivity(
-    elements: result,
-    message:
-        'Campo semántico generado con ${pictograms.length} ${usePictograms ? "pictogramas" : "dibujos"}',
+  return SemanticFieldActivityResult(
+    pages: allPages,
+    message: 'Campo semántico generado con ${pictograms.length} ${usePictograms ? "pictogramas" : "dibujos"} en ${allPages.length} página${allPages.length > 1 ? "s" : ""}',
   );
 }

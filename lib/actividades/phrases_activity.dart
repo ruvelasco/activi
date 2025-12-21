@@ -38,6 +38,9 @@ Future<GeneratedActivity> generatePhrasesActivity({
   final margin = 40.0;
   final topImageHeight = 280.0;
 
+  // NOTA: Títulos e instrucciones se manejan automáticamente por el sistema de _pageTitles/_pageInstructions
+  // NO los agregamos aquí para evitar duplicación en el PDF
+
   // Imagen superior a ancho completo
   if (selectableImage.type == CanvasElementType.networkImage ||
       selectableImage.type == CanvasElementType.pictogramCard) {

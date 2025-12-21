@@ -44,6 +44,7 @@ class CanvasImage {
   bool flipVertical;
   String? groupId;
   Uint8List? webBytes; // Para web/locales en web
+  Uint8List? cachedImageBytes; // Caché de bytes de imágenes de red para PDF
 
   CanvasImage({
     required this.id,
@@ -51,6 +52,7 @@ class CanvasImage {
     this.imageUrl,
     this.imagePath,
     this.webBytes,
+    this.cachedImageBytes,
     this.text,
     this.fontSize = 24.0,
     this.textColor = Colors.black,
@@ -216,6 +218,7 @@ class CanvasImage {
     String? imageUrl,
     String? imagePath,
     Uint8List? webBytes,
+    Uint8List? cachedImageBytes,
     String? text,
     double? fontSize,
     Color? textColor,
@@ -242,6 +245,7 @@ class CanvasImage {
       imageUrl: imageUrl ?? this.imageUrl,
       imagePath: imagePath ?? this.imagePath,
       webBytes: webBytes ?? this.webBytes,
+      cachedImageBytes: cachedImageBytes ?? this.cachedImageBytes,
       text: text ?? this.text,
       fontSize: fontSize ?? this.fontSize,
       textColor: textColor ?? this.textColor,

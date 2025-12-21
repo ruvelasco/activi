@@ -9,8 +9,15 @@ import '../utils/syllables_helper.dart';
 class PhonologicalAwarenessResult {
   final List<List<CanvasImage>> pages;
   final String message;
+  final String title;
+  final String instructions;
 
-  PhonologicalAwarenessResult({required this.pages, required this.message});
+  PhonologicalAwarenessResult({
+    required this.pages,
+    required this.message,
+    this.title = 'CONCIENCIA FONOLÓGICA',
+    this.instructions = 'Identifica las sílabas de cada palabra',
+  });
 }
 
 /// Genera actividad de conciencia fonológica
@@ -70,63 +77,21 @@ Future<PhonologicalAwarenessResult> generatePhonologicalAwarenessActivity({
   }
 
   const margin = 40.0;
+  const templateHeaderSpace = 120.0; // Espacio para título (60pt) + instrucciones (50pt) + margen
   final cellWidth = (canvasWidth - margin * 2) / cols;
-  final cellHeight = (canvasHeight - margin * 2) / rows;
+  final availableHeight = canvasHeight - templateHeaderSpace - margin * 2;
+  final cellHeight = availableHeight / rows;
 
   // Dividir imágenes en páginas
   final totalPages = (selectable.length / imagesPerPage).ceil();
   final pages = <List<CanvasImage>>[];
 
-  // Página inicial con el nombre del proyecto (si existe)
-  debugPrint('DEBUG: projectName recibido = "$projectName"');
-  final titleElements = <CanvasImage>[];
-
-  if (projectName.isNotEmpty) {
-    final titleText = uppercase ? projectName.toUpperCase() : projectName;
-    // Calcular posición centrada aproximadamente
-    final titleWidthApprox = titleText.length * 25.0;
-    final titleX = (canvasWidth - titleWidthApprox) / 2;
-
-    titleElements.add(
-      CanvasImage.text(
-        id: 'project_name',
-        text: titleText,
-        position: Offset(
-          titleX.clamp(50, canvasWidth - 100),
-          canvasHeight / 2 - 50,
-        ),
-        fontSize: 48.0,
-        textColor: Colors.blue.shade700,
-        isBold: true,
-        fontFamily: fontFamily,
-      ),
-    );
-  }
-
-  // Siempre añadir el subtítulo
-  final subtitleText = 'Conciencia Fonológica';
-  final subtitleWidthApprox = subtitleText.length * 17.0;
-  final subtitleX = (canvasWidth - subtitleWidthApprox) / 2;
-
-  titleElements.add(
-    CanvasImage.text(
-      id: 'subtitle',
-      text: subtitleText,
-      position: Offset(
-        subtitleX.clamp(50, canvasWidth - 100),
-        projectName.isNotEmpty ? canvasHeight / 2 + 20 : canvasHeight / 2,
-      ),
-      fontSize: 32.0,
-      textColor: Colors.black87,
-      isBold: false,
-      fontFamily: fontFamily,
-    ),
-  );
-
-  pages.add(titleElements);
-
   for (int pageIndex = 0; pageIndex < totalPages; pageIndex++) {
     final pageElements = <CanvasImage>[];
+
+    // NOTA: Títulos e instrucciones se manejan automáticamente por el sistema de _pageTitles/_pageInstructions
+    // NO los agregamos aquí para evitar duplicación en el PDF
+
     final startIdx = pageIndex * imagesPerPage;
     final endIdx = (startIdx + imagesPerPage).clamp(0, selectable.length);
     final pageImages = selectable.sublist(startIdx, endIdx);
@@ -137,12 +102,22 @@ Future<PhonologicalAwarenessResult> generatePhonologicalAwarenessActivity({
       final row = i ~/ cols;
 
       final cellX = margin + col * cellWidth;
-      final cellY = margin + row * cellHeight;
+      final cellY = templateHeaderSpace + margin + row * cellHeight;
 
       final originalImage = pageImages[i];
 
-      // Calcular dimensiones de imagen según espacio disponible
-      // Escalar más agresivamente cuando hay menos imágenes
+      // Calcular espacio necesario para textos (palabra + sílabas + letras)
+      const lineSpacing = 25.0;
+      int textLines = 0;
+      if (showWord) textLines++;
+      if (showSyllables) textLines++;
+      if (showLetters) textLines++;
+      final textAreaHeight = textLines * lineSpacing;
+
+      // Calcular tamaño de imagen considerando espacio vertical disponible
+      final availableHeightForImage = cellHeight - textAreaHeight - 20; // 20 = márgenes
+
+      // Calcular imageSize basándose en el espacio disponible (ancho Y alto)
       double imageSize;
       switch (imagesPerPage) {
         case 2:
@@ -159,6 +134,10 @@ Future<PhonologicalAwarenessResult> generatePhonologicalAwarenessActivity({
           imageSize = (cellWidth * 0.7).clamp(80.0, 150.0);
           break;
       }
+
+      // Limitar imageSize al espacio vertical disponible
+      imageSize = imageSize.clamp(60.0, availableHeightForImage);
+
       final imageX = cellX + (cellWidth - imageSize) / 2;
       final imageY = cellY + 10;
 
@@ -195,7 +174,6 @@ Future<PhonologicalAwarenessResult> generatePhonologicalAwarenessActivity({
           debugPrint('Sílabas separadas: $silabas');
 
           double currentY = imageY + imageSize + 10;
-          const lineSpacing = 25.0;
 
           // 1. Mostrar palabra completa si está marcado
           if (showWord) {
@@ -220,64 +198,46 @@ Future<PhonologicalAwarenessResult> generatePhonologicalAwarenessActivity({
 
           // 2. Mostrar sílabas separadas si está marcado
           if (showSyllables && silabas.isNotEmpty) {
-            final syllableSpacing = 0.5; // Espaciado muy reducido
-            final totalSyllablesWidth = imageSize;
-            final syllableWidth =
-                (totalSyllablesWidth -
-                    (syllableSpacing * (silabas.length - 1))) /
-                silabas.length;
-            final textStartX = cellX + (cellWidth - imageSize) / 2;
+            // Crear el texto de todas las sílabas separadas por guiones
+            final syllablesText = uppercase
+                ? silabas.map((s) => s.toUpperCase()).join(' - ')
+                : silabas.map((s) => s.toLowerCase()).join(' - ');
 
-            for (int j = 0; j < silabas.length; j++) {
-              final syllableX =
-                  textStartX + (j * (syllableWidth + syllableSpacing));
-              final syllableText = uppercase
-                  ? silabas[j].toUpperCase()
-                  : silabas[j].toLowerCase();
-
-              pageElements.add(
-                CanvasImage.text(
-                  id: 'syllable_${pageIndex}_${i}_$j',
-                  text: syllableText,
-                  position: Offset(syllableX, currentY),
-                  fontSize: 18.0,
-                  textColor: Colors.black,
-                  isBold: false,
-                  fontFamily: fontFamily,
-                ).copyWith(width: syllableWidth),
-              );
-            }
+            // Centrar las sílabas en el ancho de la celda
+            pageElements.add(
+              CanvasImage.text(
+                id: 'syllables_${pageIndex}_$i',
+                text: syllablesText,
+                position: Offset(cellX, currentY),
+                fontSize: 18.0,
+                textColor: Colors.black,
+                isBold: false,
+                fontFamily: fontFamily,
+              ).copyWith(width: cellWidth),
+            );
             currentY += lineSpacing;
           }
 
           // 3. Mostrar letras separadas si está marcado
           if (showLetters) {
             final letters = palabra.split('');
-            final letterSpacing = 0.5; // Espaciado muy reducido
-            final totalLettersWidth = imageSize;
-            final letterWidth =
-                (totalLettersWidth - (letterSpacing * (letters.length - 1))) /
-                letters.length;
-            final textStartX = cellX + (cellWidth - imageSize) / 2;
+            // Crear el texto de todas las letras separadas por espacios
+            final lettersText = uppercase
+                ? letters.map((l) => l.toUpperCase()).join(' ')
+                : letters.map((l) => l.toLowerCase()).join(' ');
 
-            for (int j = 0; j < letters.length; j++) {
-              final letterX = textStartX + (j * (letterWidth + letterSpacing));
-              final letterText = uppercase
-                  ? letters[j].toUpperCase()
-                  : letters[j].toLowerCase();
-
-              pageElements.add(
-                CanvasImage.text(
-                  id: 'letter_${pageIndex}_${i}_$j',
-                  text: letterText,
-                  position: Offset(letterX, currentY),
-                  fontSize: 18.0,
-                  textColor: Colors.black,
-                  isBold: false,
-                  fontFamily: fontFamily,
-                ).copyWith(width: letterWidth),
-              );
-            }
+            // Centrar las letras en el ancho de la celda
+            pageElements.add(
+              CanvasImage.text(
+                id: 'letters_${pageIndex}_$i',
+                text: lettersText,
+                position: Offset(cellX, currentY),
+                fontSize: 18.0,
+                textColor: Colors.black,
+                isBold: false,
+                fontFamily: fontFamily,
+              ).copyWith(width: cellWidth),
+            );
           }
         }
       } else if (originalImage.type == CanvasElementType.localImage) {
@@ -309,7 +269,7 @@ Future<PhonologicalAwarenessResult> generatePhonologicalAwarenessActivity({
   return PhonologicalAwarenessResult(
     pages: pages,
     message:
-        'Actividad de conciencia fonológica generada con ${selectable.length} palabra(s) en ${totalPages + 1} página(s) (incluyendo portada)',
+        'Actividad de conciencia fonológica generada con ${selectable.length} palabra(s) en $totalPages página(s)',
   );
 }
 
@@ -447,14 +407,19 @@ List<CanvasImage> _buildBoardTemplatePage({
   required String fontFamily,
 }) {
   final elements = <CanvasImage>[];
+
+  // NOTA: Títulos e instrucciones se manejan automáticamente por el sistema de _pageTitles/_pageInstructions
+  // NO los agregamos aquí para evitar duplicación en el PDF
+
   const margin = 28.0;
+  const templateHeaderSpace = 120.0;
   const gap = 18.0;
   const slotHeight = 52.0;
 
   final boardWidth = canvasWidth - margin * 2;
-  final boardHeight = canvasHeight - margin * 2;
+  final availableBoardHeight = canvasHeight - templateHeaderSpace - margin * 2;
   final boardX = margin;
-  final boardY = margin;
+  final boardY = templateHeaderSpace + margin;
 
   elements.add(
     CanvasImage.shape(
@@ -462,13 +427,13 @@ List<CanvasImage> _buildBoardTemplatePage({
       shapeType: ShapeType.rectangle,
       position: Offset(boardX, boardY),
       width: boardWidth,
-      height: boardHeight,
+      height: availableBoardHeight,
       shapeColor: Colors.orange[600]!,
       strokeWidth: 4.0,
     ),
   );
 
-  final puzzleSize = math.min(boardWidth * 0.7, boardHeight * 0.36);
+  final puzzleSize = math.min(boardWidth * 0.7, availableBoardHeight * 0.36);
   final puzzleX = boardX + (boardWidth - puzzleSize) / 2;
   final puzzleY = boardY + 24;
 
@@ -614,7 +579,12 @@ List<CanvasImage> _buildCutoutsPage({
   required String fontFamily,
 }) {
   final elements = <CanvasImage>[];
+
+  // NOTA: Títulos e instrucciones se manejan automáticamente por el sistema de _pageTitles/_pageInstructions
+  // NO los agregamos aquí para evitar duplicación en el PDF
+
   const margin = 28.0;
+  const templateHeaderSpace = 120.0;
   const cardHeight = 50.0;
   const rowGap = 18.0;
   double _centerX(String text, double width, double fontSize) {
@@ -626,21 +596,10 @@ List<CanvasImage> _buildCutoutsPage({
     return (boxHeight - fontSize * lineHeightFactor) / 2;
   }
 
-  elements.add(
-    CanvasImage.text(
-      id: 'cutouts_label_$index',
-      text: '',
-      position: const Offset(20, 20),
-      fontSize: 20,
-      textColor: Colors.grey[700]!,
-      fontFamily: fontFamily,
-      isBold: true,
-    ),
-  );
-
-  final puzzleSize = math.min(canvasWidth - margin * 2, canvasHeight * 0.42);
+  final availableHeight = canvasHeight - templateHeaderSpace - margin * 2;
+  final puzzleSize = math.min(canvasWidth - margin * 2, availableHeight * 0.42);
   final puzzleX = (canvasWidth - puzzleSize) / 2;
-  final puzzleY = margin + 10;
+  final puzzleY = templateHeaderSpace + margin + 10;
 
   if (image.type == CanvasElementType.localImage) {
     elements.add(

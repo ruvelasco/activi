@@ -44,11 +44,16 @@ GeneratedActivity generateInstructionsActivity({
   const margin = 30.0;
   const imageSize = 70.0;
   const gap = 12.0;
+  const templateHeaderSpace = 120.0; // Espacio para título (60pt) + instrucciones (50pt) + margen
+
   final cols = ((canvasWidth - 2 * margin) / (imageSize + gap)).floor().clamp(
     2,
     8,
   );
-  final rows = ((canvasHeight - margin - 140) / (imageSize + gap))
+  // Calcular filas usando el espacio disponible después del header y las muestras
+  const sampleAreaHeight = 100.0; // Espacio reservado para las muestras y su contenedor
+  final availableHeight = canvasHeight - templateHeaderSpace - margin * 2 - sampleAreaHeight;
+  final rows = (availableHeight / (imageSize + gap))
       .floor()
       .clamp(2, 10);
   final capacity = cols * rows;
@@ -84,24 +89,16 @@ GeneratedActivity generateInstructionsActivity({
 
   final elements = <CanvasImage>[];
 
-  elements.add(
-    CanvasImage.text(
-      id: 'subtitle',
-      text: 'Mira los modelos y rodea la cantidad indicada',
-      position: Offset((canvasWidth - 380) / 2, margin / 2),
-      fontSize: 16,
-      textColor: Colors.grey[700]!,
-      fontFamily: 'Roboto',
-    ).copyWith(width: 380),
-  );
+  // NOTA: Títulos e instrucciones se manejan automáticamente por el sistema de _pageTitles/_pageInstructions
+  // NO los agregamos aquí para evitar duplicación en el PDF
 
-  // Muestras en fila
+  // Muestras en fila (comenzar después del espacio del header)
   const sampleSize = 55.0;
   const sampleGap = 12.0;
   final samplesWidth =
       countsThisPage.length * (sampleSize + 40 + sampleGap) - sampleGap;
   double sampleX = (canvasWidth - samplesWidth) / 2;
-  final sampleY = margin + 14;
+  final sampleY = templateHeaderSpace + margin + 14;
 
   for (final entry in countsThisPage.entries) {
     final img = entry.key;
@@ -161,14 +158,20 @@ GeneratedActivity generateInstructionsActivity({
   }
   objects.shuffle(random);
 
-  final startY = margin + 110;
+  // Calcular el área del grid para centrarlo
+  final gridWidth = cols * imageSize + (cols - 1) * gap;
+  final gridHeight = rows * imageSize + (rows - 1) * gap;
+
+  // Centrar el grid en el espacio disponible
+  final gridStartX = (canvasWidth - gridWidth) / 2;
+  final startY = templateHeaderSpace + margin + sampleAreaHeight + ((availableHeight - gridHeight) / 2);
   int objIdx = 0;
   for (int row = 0; row < rows && objIdx < objects.length; row++) {
     for (int col = 0; col < cols && objIdx < objects.length; col++) {
       final obj = objects[objIdx];
       final jitterX = random.nextDouble() * 6 - 3;
       final jitterY = random.nextDouble() * 6 - 3;
-      final xPos = margin + col * (imageSize + gap) + jitterX;
+      final xPos = gridStartX + col * (imageSize + gap) + jitterX;
       final yPos = startY + row * (imageSize + gap) + jitterY;
 
       final baseId = '${obj.isTarget ? "target" : "dist"}_$objIdx';

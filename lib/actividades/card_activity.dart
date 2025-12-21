@@ -9,8 +9,15 @@ enum CardLayout { imageTop, imageRight, imageLeft, textThenImage }
 class CardActivityResult {
   final List<List<CanvasImage>> pages;
   final String message;
+  final String title;
+  final String instructions;
 
-  CardActivityResult({required this.pages, required this.message});
+  CardActivityResult({
+    required this.pages,
+    required this.message,
+    this.title = 'TARJETA',
+    this.instructions = 'Lee y observa la imagen',
+  });
 }
 
 Future<CardActivityResult> generateCardActivity({
@@ -33,26 +40,37 @@ Future<CardActivityResult> generateCardActivity({
   final canvasWidth = isLandscape ? a4HeightPts : a4WidthPts;
   final canvasHeight = isLandscape ? a4WidthPts : a4HeightPts;
   const margin = 30.0;
+  const templateHeaderSpace = 120.0; // Espacio para título (60pt) + instrucciones (50pt) + margen
   final cardWidth = canvasWidth - margin * 2;
   const rowsPerPage = 2;
-  final cardHeight = ((canvasHeight - margin * 2 - 10) / rowsPerPage).clamp(260.0, 420.0);
+  // Restar el espacio del header del área disponible
+  final availableHeight = canvasHeight - templateHeaderSpace - margin * 2 - 10;
+  final cardHeight = (availableHeight / rowsPerPage).clamp(260.0, 420.0);
 
   final pages = <List<CanvasImage>>[];
 
-  for (int i = 0; i < selectable.length; i++) {
+  for (int pageStart = 0; pageStart < selectable.length; pageStart += rowsPerPage) {
     final pageElements = <CanvasImage>[];
-    final image = selectable[i];
-    final data = await _getPictogramData(image.imageUrl);
-    final title = data.title.isNotEmpty ? data.title : (image.text ?? 'TARJETA');
-    final body = data.description.isNotEmpty ? data.description : 'Descripción no disponible';
+
+    // NOTA: Títulos e instrucciones se manejan automáticamente por el sistema de _pageTitles/_pageInstructions
+    // NO los agregamos aquí para evitar duplicación en el PDF
 
     for (int row = 0; row < rowsPerPage; row++) {
-      final cardY = margin + row * (cardHeight + 10);
-      final baseId = 'card_${i}_$row';
+      final imageIndex = pageStart + row;
+      if (imageIndex >= selectable.length) break;
+
+      final image = selectable[imageIndex];
+      final data = await _getPictogramData(image.imageUrl);
+      final title = data.title.isNotEmpty ? data.title : (image.text ?? 'TARJETA');
+      final body = data.description.isNotEmpty ? data.description : 'Descripción no disponible';
+
+      // Comenzar el contenido después del espacio reservado para título/instrucciones
+      final cardY = templateHeaderSpace + margin + row * (cardHeight + 10);
+      final baseId = 'card_${imageIndex}_$row';
       // Fondo
       pageElements.add(
         CanvasImage.shape(
-          id: 'card_bg_${i}_$row',
+          id: 'card_bg_${imageIndex}_$row',
           shapeType: ShapeType.rectangle,
           position: Offset(margin, cardY),
           shapeColor: Colors.grey[200]!,

@@ -263,6 +263,22 @@ class _ActivityPackConfigDialogState extends State<ActivityPackConfigDialog> {
         return Colors.red[700]!;
       case ActivityPackType.card:
         return Colors.deepOrange[700]!;
+      case ActivityPackType.classification:
+        return Colors.indigo[700]!;
+      case ActivityPackType.phonologicalAwareness:
+        return Colors.cyan[700]!;
+      case ActivityPackType.phonologicalBoard:
+        return Colors.blueGrey[700]!;
+      case ActivityPackType.phonologicalSquares:
+        return Colors.lightBlue[700]!;
+      case ActivityPackType.semanticField:
+        return Colors.amber[700]!;
+      case ActivityPackType.syllableVocabulary:
+        return Colors.lime[700]!;
+      case ActivityPackType.crossword:
+        return Colors.brown[700]!;
+      case ActivityPackType.wordSearch:
+        return Colors.deepPurple[700]!;
     }
   }
 }

@@ -9,11 +9,15 @@ class WritingPracticeResult {
   final List<List<CanvasImage>> pages;
   final TemplateType? template;
   final String? message;
+  final String title;
+  final String instructions;
 
   WritingPracticeResult({
     required this.pages,
     this.template,
     this.message,
+    this.title = 'PRÁCTICA DE ESCRITURA',
+    this.instructions = 'Escribe el nombre de cada imagen en la pauta',
   });
 }
 
@@ -117,11 +121,18 @@ Future<WritingPracticeResult> generateWritingPracticeActivity({
   final canvasWidth = isLandscape ? a4HeightPts : a4WidthPts;
   final canvasHeight = isLandscape ? a4WidthPts : a4HeightPts;
   const margin = 30.0;
+  const templateHeaderSpace = 120.0; // Espacio para título (60pt) + instrucciones (50pt) + margen
   final cellWidth = (canvasWidth - margin * 2) / cols;
-  final cellHeight = (canvasHeight - margin * 2) / rows;
+  // Restar el espacio del header del área disponible
+  final availableHeight = canvasHeight - templateHeaderSpace - margin * 2;
+  final cellHeight = availableHeight / rows;
 
   for (int pageIndex = 0; pageIndex < totalPages; pageIndex++) {
     final pageElements = <CanvasImage>[];
+
+    // NOTA: Títulos e instrucciones se manejan automáticamente por el sistema de _pageTitles/_pageInstructions
+    // NO los agregamos aquí para evitar duplicación en el PDF
+
     final pageImages = <CanvasImage>[];
 
     for (int i = 0; i < itemsPerPage; i++) {
@@ -140,7 +151,8 @@ Future<WritingPracticeResult> generateWritingPracticeActivity({
       final row = i ~/ cols;
 
       final xPos = margin + col * cellWidth + (cellWidth - imageSize) / 2;
-      final yPos = margin + row * cellHeight;
+      // Comenzar el contenido después del espacio reservado para título/instrucciones
+      final yPos = templateHeaderSpace + margin + row * cellHeight;
 
       final originalImage = pageImages[i];
 

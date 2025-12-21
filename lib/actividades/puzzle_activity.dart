@@ -5,10 +5,14 @@ import '../models/canvas_image.dart';
 class PuzzleActivityResult {
   final List<CanvasImage> referencePage; // Página con la imagen completa de referencia
   final List<CanvasImage> piecesPage; // Página con las piezas recortables
+  final String title;
+  final String instructions;
 
   PuzzleActivityResult({
     required this.referencePage,
     required this.piecesPage,
+    this.title = 'PUZLE',
+    this.instructions = 'Recorta las piezas y forma la imagen',
   });
 }
 
@@ -50,6 +54,9 @@ PuzzleActivityResult generatePuzzleActivity({
 
   // ========== PÁGINA 1: IMAGEN DE REFERENCIA ==========
   final referencePage = <CanvasImage>[];
+
+  // NOTA: Títulos e instrucciones se manejan automáticamente por el sistema de _pageTitles/_pageInstructions
+  // NO los agregamos aquí para evitar duplicación en el PDF
 
   // Tamaño de la imagen de referencia (más pequeña, centrada)
   final margin = 80.0;
@@ -148,6 +155,9 @@ PuzzleActivityResult generatePuzzleActivity({
 
   // ========== PÁGINA 2: PIEZAS RECORTABLES ==========
   final piecesPage = <CanvasImage>[];
+
+  // NOTA: Títulos e instrucciones se manejan automáticamente por el sistema de _pageTitles/_pageInstructions
+  // NO los agregamos aquí para evitar duplicación en el PDF
 
   // Calcular tamaño del puzzle para que quepa en la página
   final puzzleMargin = 60.0;

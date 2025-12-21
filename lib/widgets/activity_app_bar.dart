@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'admin/activity_type_admin_page.dart';
 
 class ActivityAppBar extends StatelessWidget implements PreferredSizeWidget {
   final bool canUndo;
@@ -80,6 +81,17 @@ class ActivityAppBar extends StatelessWidget implements PreferredSizeWidget {
           icon: const Icon(Icons.picture_as_pdf),
           onPressed: onGeneratePdf,
           tooltip: 'Generar PDF',
+        ),
+        IconButton(
+          icon: const Icon(Icons.admin_panel_settings),
+          onPressed: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const ActivityTypeAdminPage(),
+              ),
+            );
+          },
+          tooltip: 'Administrar tipos de actividad',
         ),
         const SizedBox(width: 4),
         TextButton.icon(

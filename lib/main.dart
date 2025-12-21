@@ -35,6 +35,12 @@ import 'actividades/instructions_activity.dart' as instructions_activity;
 import 'actividades/phrases_activity.dart' as phrases_activity;
 import 'actividades/card_activity.dart' as card_activity;
 import 'actividades/activity_pack_generator.dart';
+import 'actividades/phonological_squares_activity.dart'
+    as phonological_squares_activity;
+import 'actividades/crossword_activity.dart' as crossword_activity;
+import 'actividades/sentence_completion_activity.dart'
+    as sentence_completion_activity;
+import 'actividades/word_search_activity.dart' as word_search_activity;
 import 'widgets/activity_pack_config_dialog.dart';
 import 'widgets/activity_pack_progress_dialog.dart';
 
@@ -1924,6 +1930,172 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
     }
   }
 
+  Future<void> _generatePhonologicalSquaresActivity() async {
+    final images = _canvasImages
+        .where((element) => element.type == CanvasElementType.networkImage || element.type == CanvasElementType.pictogramCard)
+        .toList();
+
+    if (images.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Añade al menos una imagen al canvas')),
+      );
+      return;
+    }
+
+    try {
+      final result =
+          await phonological_squares_activity.generatePhonologicalSquaresActivity(
+        images: images,
+        isLandscape: _pageOrientations[_currentPage],
+        a4WidthPts: _a4WidthPts,
+        a4HeightPts: _a4HeightPts,
+      );
+
+      setState(() {
+        _pages[_currentPage].clear();
+        _pages[_currentPage].addAll(result.pages[0]);
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Actividad de Cuadrados Fonológicos generada')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e')),
+      );
+    }
+  }
+
+  Future<void> _generateCrosswordActivity() async {
+    final images = _canvasImages
+        .where((element) => element.type == CanvasElementType.networkImage || element.type == CanvasElementType.pictogramCard)
+        .toList();
+
+    if (images.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Añade al menos una imagen al canvas')),
+      );
+      return;
+    }
+
+    try {
+      final result = await crossword_activity.generateCrosswordActivity(
+        images: images,
+        isLandscape: _pageOrientations[_currentPage],
+        a4WidthPts: _a4WidthPts,
+        a4HeightPts: _a4HeightPts,
+      );
+
+      setState(() {
+        _pages[_currentPage].clear();
+        _pages[_currentPage].addAll(result.pages[0]);
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Crucigrama generado')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e')),
+      );
+    }
+  }
+
+  Future<void> _generateWordSearchActivity() async {
+    final images = _canvasImages
+        .where((element) => element.type == CanvasElementType.networkImage || element.type == CanvasElementType.pictogramCard)
+        .toList();
+
+    if (images.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Añade al menos una imagen al canvas')),
+      );
+      return;
+    }
+
+    try {
+      final result = await word_search_activity.generateWordSearchActivity(
+        images: images,
+        isLandscape: _pageOrientations[_currentPage],
+        a4WidthPts: _a4WidthPts,
+        a4HeightPts: _a4HeightPts,
+      );
+
+      setState(() {
+        _pages[_currentPage].clear();
+        _pages[_currentPage].addAll(result.pages[0]);
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Sopa de letras generada')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e')),
+      );
+    }
+  }
+
+  Future<void> _generateSentenceCompletionActivity() async {
+    final images = _canvasImages
+        .where((element) => element.type == CanvasElementType.networkImage || element.type == CanvasElementType.pictogramCard)
+        .toList();
+
+    if (images.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Añade al menos una imagen al canvas')),
+      );
+      return;
+    }
+
+    // Mostrar configuración
+    final config = await showDialog<sentence_completion_activity.SentenceCompletionConfig>(
+      context: context,
+      builder: (context) => const sentence_completion_activity.SentenceCompletionConfigDialog(),
+    );
+
+    if (config == null) return;
+
+    try {
+      final result =
+          await sentence_completion_activity.generateSentenceCompletionActivity(
+        config: config,
+        isLandscape: _pageOrientations[_currentPage],
+        a4WidthPts: _a4WidthPts,
+        a4HeightPts: _a4HeightPts,
+      );
+
+      if (result.pages.length > _pages.length) {
+        setState(() {
+          while (_pages.length < result.pages.length) {
+            _pages.add([]);
+            _pageOrientations.add(_pageOrientations[_currentPage]);
+            _pageBackgrounds.add(_pageBackgrounds[_currentPage]);
+            _pageTemplates.add(TemplateType.blank);
+          }
+        });
+      }
+
+      setState(() {
+        for (var i = 0; i < result.pages.length; i++) {
+          if (i < _pages.length) {
+            _pages[i].clear();
+            _pages[i].addAll(result.pages[i]);
+          }
+        }
+        _currentPage = 0;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Actividad generada con ${result.pages.length} páginas')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e')),
+      );
+    }
+  }
+
   Future<void> _generateSyllableVocabularyActivity() async {
     // Mostrar diálogo para ingresar la sílaba
     final config = await showDialog<Map<String, dynamic>>(
@@ -1955,7 +2127,7 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
         usePictograms: usePictograms,
       );
 
-      if (result.elements.isEmpty || result.elements.length == 1) {
+      if (result.pages.isEmpty || (result.pages.isNotEmpty && result.pages[0].isEmpty)) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
@@ -1968,14 +2140,14 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
 
       setState(() {
         _pages[_currentPage].clear();
-        _pages[_currentPage].addAll(result.elements);
+        _pages[_currentPage].addAll(result.pages[0]);
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
             result.message ??
-                'Actividad de vocabulario generada con ${result.elements.length - 1} palabras',
+                'Actividad de vocabulario generada con ${result.pages[0].length} palabras',
           ),
         ),
       );
@@ -2031,7 +2203,7 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
         usePictograms: usePictograms,
       );
 
-      if (result.elements.isEmpty || result.elements.length == 1) {
+      if (result.pages.isEmpty || (result.pages.isNotEmpty && result.pages[0].isEmpty)) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('No se encontraron palabras relacionadas'),
@@ -2042,7 +2214,7 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
 
       setState(() {
         _pages[_currentPage].clear();
-        _pages[_currentPage].addAll(result.elements);
+        _pages[_currentPage].addAll(result.pages[0]);
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -4942,6 +5114,10 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
           onPhrases: _generatePhrasesActivity,
           onCard: _generateCardActivity,
           onClassification: _generateClassificationActivity,
+          onPhonologicalSquares: _generatePhonologicalSquaresActivity,
+          onCrossword: _generateCrosswordActivity,
+          onWordSearch: _generateWordSearchActivity,
+          onSentenceCompletion: _generateSentenceCompletionActivity,
         );
       case SidebarMode.photo:
         return const Center(child: Text('Foto'));

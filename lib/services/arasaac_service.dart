@@ -264,24 +264,128 @@ class ArasaacService {
     required String syllable,
     required String position, // 'start' o 'end'
     int limit = 50,
+    bool coreVocabularyOnly = false, // Filtrar solo vocabulario nuclear
   }) async {
+    print('DEBUG getWordsBySyllable: syllable=$syllable, position=$position, limit=$limit, coreVocabularyOnly=$coreVocabularyOnly');
+
     final allKeywords = await getAllKeywords();
+    print('DEBUG getWordsBySyllable: Total keywords disponibles: ${allKeywords.length}');
+
     final syllableLower = syllable.toLowerCase();
     final matchingWords = <String>[];
+    int checkedCount = 0;
+    int matchedBySyllable = 0;
 
     for (final keyword in allKeywords) {
       final wordLower = keyword.toLowerCase();
+      bool matches = false;
 
       if (position == 'start' && wordLower.startsWith(syllableLower)) {
-        matchingWords.add(keyword);
+        matches = true;
+        matchedBySyllable++;
       } else if (position == 'end' && wordLower.endsWith(syllableLower)) {
-        matchingWords.add(keyword);
+        matches = true;
+        matchedBySyllable++;
       }
+
+      if (!matches) continue;
+
+      // Si se requiere vocabulario nuclear, verificar que la palabra tenga la categoría
+      if (coreVocabularyOnly) {
+        checkedCount++;
+        if (checkedCount % 10 == 0) {
+          print('DEBUG getWordsBySyllable: Verificadas $checkedCount palabras, encontradas ${matchingWords.length} con core vocabulary');
+        }
+
+        final hasCoreVocabulary = await _hasCoreVocabularyTag(keyword);
+        if (!hasCoreVocabulary) continue;
+
+        print('DEBUG getWordsBySyllable: ✓ "$keyword" tiene core vocabulary');
+      }
+
+      // Verificar que no sea demasiado similar a palabras ya añadidas
+      // (para evitar maestro/maestra, niño/niña, etc.)
+      if (_isSimilarToExisting(wordLower, matchingWords)) {
+        print('DEBUG getWordsBySyllable: ✗ "$keyword" es muy similar a una palabra ya añadida');
+        continue;
+      }
+
+      matchingWords.add(keyword);
 
       if (matchingWords.length >= limit) break;
     }
 
+    print('DEBUG getWordsBySyllable: Total palabras con sílaba: $matchedBySyllable');
+    print('DEBUG getWordsBySyllable: Palabras verificadas: $checkedCount');
+    print('DEBUG getWordsBySyllable: Palabras encontradas con core vocabulary: ${matchingWords.length}');
+
     return matchingWords;
+  }
+
+  // Verificar si una palabra es muy similar a las ya existentes
+  // para evitar duplicados como maestro/maestra, niño/niña, etc.
+  bool _isSimilarToExisting(String word, List<String> existingWords) {
+    final wordLower = word.toLowerCase();
+
+    for (final existing in existingWords) {
+      final existingLower = existing.toLowerCase();
+
+      // Obtener la longitud mínima para comparar
+      final minLen = wordLower.length < existingLower.length ? wordLower.length : existingLower.length;
+
+      // Si comparten al menos los primeros 5 caracteres (o el 80% de la palabra más corta)
+      final compareLength = minLen > 5 ? 5 : (minLen * 0.8).ceil();
+
+      if (minLen >= compareLength) {
+        final wordPrefix = wordLower.substring(0, compareLength);
+        final existingPrefix = existingLower.substring(0, compareLength);
+
+        if (wordPrefix == existingPrefix) {
+          return true; // Son muy similares
+        }
+      }
+    }
+
+    return false;
+  }
+
+  // Verificar si una palabra tiene el tag "core vocabulary"
+  Future<bool> _hasCoreVocabularyTag(String word) async {
+    try {
+      // Buscar el pictograma
+      final searchResults = await searchPictograms(word);
+      if (searchResults.isEmpty) {
+        print('DEBUG _hasCoreVocabularyTag: No se encontró pictograma para "$word"');
+        return false;
+      }
+
+      final pictogramId = searchResults.first.id;
+
+      // Obtener detalles del pictograma
+      final detailUrl = '$baseUrl/pictograms/${config.language}/$pictogramId';
+      final response = await http.get(Uri.parse(detailUrl));
+
+      if (response.statusCode != 200) {
+        print('DEBUG _hasCoreVocabularyTag: Error HTTP ${response.statusCode} para "$word"');
+        return false;
+      }
+
+      final data = json.decode(response.body);
+      final categories = (data['categories'] as List<dynamic>?)?.cast<String>() ?? [];
+
+      // Debug: Mostrar las categorías de la primera palabra
+      if (categories.isNotEmpty) {
+        print('DEBUG _hasCoreVocabularyTag: "$word" tiene categorías: $categories');
+      }
+
+      // Verificar si tiene "core vocabulary" en las categorías
+      final hasCoreVocab = categories.any((cat) => cat.toLowerCase().contains('core vocabulary') || cat.toLowerCase().contains('vocabulario'));
+
+      return hasCoreVocab;
+    } catch (e) {
+      print('DEBUG _hasCoreVocabularyTag: Error verificando "$word": $e');
+      return false;
+    }
   }
 }
 

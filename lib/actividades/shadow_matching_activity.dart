@@ -5,8 +5,15 @@ import '../models/canvas_image.dart';
 class ShadowMatchingResult {
   final List<List<CanvasImage>> pages;
   final String message;
+  final String title;
+  final String instructions;
 
-  ShadowMatchingResult({required this.pages, required this.message});
+  ShadowMatchingResult({
+    required this.pages,
+    required this.message,
+    this.title = 'RELACIONAR SOMBRAS',
+    this.instructions = 'Une cada imagen con su sombra',
+  });
 }
 
 ShadowMatchingResult generateShadowMatchingActivity({
@@ -35,6 +42,7 @@ ShadowMatchingResult generateShadowMatchingActivity({
   final margin = 40.0;
   const separationWidth = 24.0; // espacio central reducido
   const dotSize = 12.0;
+  const templateHeaderSpace = 120.0; // Espacio para título (60pt) + instrucciones (50pt) + margen
 
   final leftColWidth = (canvasWidth - (2 * margin) - separationWidth) / 2;
   final rightColWidth = leftColWidth;
@@ -49,14 +57,19 @@ ShadowMatchingResult generateShadowMatchingActivity({
 
     final pageElements = <CanvasImage>[];
 
+    // NOTA: Títulos e instrucciones se manejan automáticamente por el sistema de _pageTitles/_pageInstructions
+    // NO los agregamos aquí para evitar duplicación en el PDF
+
     final rows = pageImages.length;
-    final cellHeight = (canvasHeight - (2 * margin)) / rows;
+    // Restar el espacio del header del área disponible
+    final availableHeight = canvasHeight - templateHeaderSpace - (2 * margin);
+    final cellHeight = availableHeight / rows;
     final imageSize = (cellHeight * 0.78).clamp(90.0, leftColWidth * 0.95);
 
     final shuffled = List<CanvasImage>.from(pageImages)..shuffle();
 
     for (int i = 0; i < pageImages.length; i++) {
-      final yTop = margin + i * cellHeight;
+      final yTop = templateHeaderSpace + margin + i * cellHeight;
       final yImage = yTop + (cellHeight - imageSize) / 2;
       final centerY = yImage + imageSize / 2;
 

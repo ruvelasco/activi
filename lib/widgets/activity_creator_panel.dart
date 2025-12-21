@@ -16,6 +16,10 @@ class ActivityCreatorPanel extends StatelessWidget {
   final VoidCallback onClassification;
   final VoidCallback onPhonologicalAwareness;
   final VoidCallback onPhonologicalBoard;
+  final VoidCallback onPhonologicalSquares;
+  final VoidCallback onCrossword;
+  final VoidCallback onWordSearch;
+  final VoidCallback onSentenceCompletion;
 
   const ActivityCreatorPanel({
     super.key,
@@ -34,6 +38,10 @@ class ActivityCreatorPanel extends StatelessWidget {
     required this.onClassification,
     required this.onPhonologicalAwareness,
     required this.onPhonologicalBoard,
+    required this.onPhonologicalSquares,
+    required this.onCrossword,
+    required this.onWordSearch,
+    required this.onSentenceCompletion,
   });
 
   @override
@@ -202,6 +210,42 @@ class ActivityCreatorPanel extends StatelessWidget {
               infoTooltip:
                   'Crea una actividad de clasificación en 2 hojas: una con 2 cuadrados de categorías y otra con 10 objetos relacionados para recortar y clasificar. Requiere 2 imágenes de ARASAAC en el canvas.',
               onPressed: onClassification,
+            ),
+            _buildActionButton(
+              context,
+              label: 'Cuadrados Fonológicos',
+              icon: Icons.grid_4x4,
+              color: Colors.lightBlue[700],
+              infoTooltip:
+                  'Muestra las imágenes del canvas con un rectángulo de 10 cuadrados (2 filas x 5 columnas) debajo de cada una. El alumno pinta un cuadrado por cada letra de la palabra.',
+              onPressed: onPhonologicalSquares,
+            ),
+            _buildActionButton(
+              context,
+              label: 'Crucigrama',
+              icon: Icons.apps,
+              color: Colors.brown[700],
+              infoTooltip:
+                  'Genera un crucigrama usando las palabras de las imágenes del canvas. Las imágenes sirven como pistas numeradas para completar el crucigrama.',
+              onPressed: onCrossword,
+            ),
+            _buildActionButton(
+              context,
+              label: 'Sopa de Letras',
+              icon: Icons.search,
+              color: Colors.deepPurple[700],
+              infoTooltip:
+                  'Crea una sopa de letras donde el alumno debe encontrar las palabras de las imágenes del canvas escondidas en una cuadrícula de 15x15 letras.',
+              onPressed: onWordSearch,
+            ),
+            _buildActionButton(
+              context,
+              label: 'Completar Frases',
+              icon: Icons.edit_note,
+              color: Colors.teal[700],
+              infoTooltip:
+                  'Genera frases simples con las imágenes del canvas. Cada página muestra un modelo de frase completa y debajo la misma frase con espacios en blanco para completar. Incluye una página con recortables.',
+              onPressed: onSentenceCompletion,
             ),
           ],
         ),
