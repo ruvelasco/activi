@@ -8,6 +8,7 @@ class ActivityAppBar extends StatelessWidget implements PreferredSizeWidget {
   final bool sidebarCollapsed;
   final bool isLoggedIn;
   final String userLabel;
+  final String? userEmail;
   final VoidCallback onUndo;
   final VoidCallback onRedo;
   final VoidCallback onClear;
@@ -26,6 +27,7 @@ class ActivityAppBar extends StatelessWidget implements PreferredSizeWidget {
     required this.sidebarCollapsed,
     required this.isLoggedIn,
     required this.userLabel,
+    this.userEmail,
     required this.onUndo,
     required this.onRedo,
     required this.onClear,
@@ -82,17 +84,19 @@ class ActivityAppBar extends StatelessWidget implements PreferredSizeWidget {
           onPressed: onGeneratePdf,
           tooltip: 'Generar PDF',
         ),
-        IconButton(
-          icon: const Icon(Icons.admin_panel_settings),
-          onPressed: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => const ActivityTypeAdminPage(),
-              ),
-            );
-          },
-          tooltip: 'Administrar tipos de actividad',
-        ),
+        // Botón de administración solo visible para ruvelasco@gmail.com
+        if (userEmail == 'ruvelasco@gmail.com')
+          IconButton(
+            icon: const Icon(Icons.admin_panel_settings),
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const ActivityTypeAdminPage(),
+                ),
+              );
+            },
+            tooltip: 'Administrar tipos de actividad',
+          ),
         const SizedBox(width: 4),
         TextButton.icon(
           onPressed: onAuthAction,

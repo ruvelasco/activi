@@ -3998,6 +3998,7 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
         sidebarCollapsed: _sidebarCollapsed,
         isLoggedIn: _currentUser != null,
         userLabel: _currentUser?.username ?? 'Invitado',
+        userEmail: _currentUser?.username,
         onUndo: _undo,
         onRedo: _redo,
         onClear: _clearCanvas,
