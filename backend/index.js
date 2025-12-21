@@ -28,10 +28,12 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Endpoint temporal para ejecutar migraciones (SOLO DESARROLLO)
+// Endpoint temporal para ejecutar migraciones
 app.post('/migrations/run', async (req, res) => {
-  if (process.env.NODE_ENV === 'production') {
-    return res.status(403).json({ message: 'No permitido en producción sin autenticación' });
+  // Permitir migraciones con token secreto o en desarrollo
+  const { secret } = req.body || {};
+  if (process.env.NODE_ENV === 'production' && secret !== process.env.JWT_SECRET) {
+    return res.status(403).json({ message: 'No permitido sin autenticación' });
   }
 
   try {
