@@ -18,7 +18,7 @@ import 'models/project_data.dart';
 import 'models/user_account.dart';
 import 'services/user_service.dart';
 import 'widgets/template_menu.dart';
-import 'widgets/activity_creator_panel.dart';
+import 'widgets/dynamic_activity_creator_panel.dart';
 import 'widgets/activity_app_bar.dart';
 import 'widgets/sidebar_panel.dart';
 import 'actividades/shadow_matching_activity.dart';
@@ -2286,6 +2286,40 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
         ),
       ),
     );
+  }
+
+  /// Mapeo de nombres de actividad a sus métodos de generación
+  void _handleActivitySelection(String activityName) {
+    final activityMap = {
+      'activity_pack': _generateActivityPack,
+      'shadow_matching': _generateShadowMatchingActivity,
+      'puzzle': _generatePuzzleActivity,
+      'writing_practice': _generateWritingPracticeActivity,
+      'counting_practice': _generateCountingActivity,
+      'phonological_awareness': _generatePhonologicalAwarenessActivity,
+      'phonological_board': _generatePhonologicalBoardActivity,
+      'series': _generateSeriesActivity,
+      'symmetry': _generateSymmetryActivity,
+      'syllable_vocabulary': _generateSyllableVocabularyActivity,
+      'semantic_field': _generateSemanticFieldActivity,
+      'instructions': _generateInstructionsActivity,
+      'phrases': _generatePhrasesActivity,
+      'card': _generateCardActivity,
+      'classification': _generateClassificationActivity,
+      'phonological_squares': _generatePhonologicalSquaresActivity,
+      'crossword': _generateCrosswordActivity,
+      'word_search': _generateWordSearchActivity,
+      'sentence_completion': _generateSentenceCompletionActivity,
+    };
+
+    final handler = activityMap[activityName];
+    if (handler != null) {
+      handler();
+    } else {
+      if (kDebugMode) {
+        print('Actividad no encontrada: $activityName');
+      }
+    }
   }
 
   Future<void> _addLocalImage() async {
@@ -5098,26 +5132,8 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
       case SidebarMode.config:
         return _buildConfigPanel();
       case SidebarMode.creador:
-        return ActivityCreatorPanel(
-          onActivityPack: _generateActivityPack,
-          onShadowMatching: _generateShadowMatchingActivity,
-          onPuzzle: _generatePuzzleActivity,
-          onWritingPractice: _generateWritingPracticeActivity,
-          onCountingPractice: _generateCountingActivity,
-          onPhonologicalAwareness: _generatePhonologicalAwarenessActivity,
-          onPhonologicalBoard: _generatePhonologicalBoardActivity,
-          onSeries: _generateSeriesActivity,
-          onSymmetry: _generateSymmetryActivity,
-          onSyllableVocabulary: _generateSyllableVocabularyActivity,
-          onSemanticField: _generateSemanticFieldActivity,
-          onInstructions: _generateInstructionsActivity,
-          onPhrases: _generatePhrasesActivity,
-          onCard: _generateCardActivity,
-          onClassification: _generateClassificationActivity,
-          onPhonologicalSquares: _generatePhonologicalSquaresActivity,
-          onCrossword: _generateCrosswordActivity,
-          onWordSearch: _generateWordSearchActivity,
-          onSentenceCompletion: _generateSentenceCompletionActivity,
+        return DynamicActivityCreatorPanel(
+          onActivitySelected: _handleActivitySelection,
         );
       case SidebarMode.photo:
         return const Center(child: Text('Foto'));
