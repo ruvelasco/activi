@@ -19,3 +19,24 @@ CREATE TABLE IF NOT EXISTS project (
 );
 
 CREATE INDEX IF NOT EXISTS idx_project_user ON project(user_id);
+
+-- Tabla de tipos de actividades
+CREATE TABLE IF NOT EXISTS activity_type (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  info_tooltip TEXT NOT NULL DEFAULT '',
+  icon_name TEXT NOT NULL DEFAULT 'help_outline',
+  color_value INTEGER NOT NULL DEFAULT 4280391411,
+  "order" INTEGER NOT NULL DEFAULT 999,
+  is_new BOOLEAN NOT NULL DEFAULT false,
+  is_highlighted BOOLEAN NOT NULL DEFAULT false,
+  is_enabled BOOLEAN NOT NULL DEFAULT true,
+  category TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_activity_type_order ON activity_type("order");
+CREATE INDEX IF NOT EXISTS idx_activity_type_enabled ON activity_type(is_enabled);

@@ -255,9 +255,296 @@ app.get('/soyvisual/image', async (req, res) => {
   }
 });
 
+// ============================================
+// ENDPOINTS DE GESTIÓN DE TIPOS DE ACTIVIDADES
+// ============================================
+
+// Obtener todos los tipos de actividades (público, con camelCase)
+app.get('/activity-types', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT * FROM activity_type ORDER BY "order" ASC'
+    );
+
+    // Convertir snake_case a camelCase para el frontend
+    const activities = rows.map(row => ({
+      id: row.id,
+      name: row.name,
+      title: row.title,
+      description: row.description,
+      infoTooltip: row.info_tooltip,
+      iconName: row.icon_name,
+      colorValue: row.color_value,
+      order: row.order,
+      isNew: row.is_new,
+      isHighlighted: row.is_highlighted,
+      isEnabled: row.is_enabled,
+      category: row.category,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    }));
+
+    return res.json(activities);
+  } catch (err) {
+    console.error('Fetch activity types error', err);
+    return res.status(500).json({ message: 'Error en servidor' });
+  }
+});
+
+// Obtener un tipo de actividad por nombre (público)
+app.get('/activity-types/name/:name', async (req, res) => {
+  try {
+    const { name } = req.params;
+    const { rows } = await pool.query(
+      'SELECT * FROM activity_type WHERE name = $1 LIMIT 1',
+      [name]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ message: 'Actividad no encontrada' });
+    }
+
+    const row = rows[0];
+    const activity = {
+      id: row.id,
+      name: row.name,
+      title: row.title,
+      description: row.description,
+      infoTooltip: row.info_tooltip,
+      iconName: row.icon_name,
+      colorValue: row.color_value,
+      order: row.order,
+      isNew: row.is_new,
+      isHighlighted: row.is_highlighted,
+      isEnabled: row.is_enabled,
+      category: row.category,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+
+    return res.json(activity);
+  } catch (err) {
+    console.error('Fetch activity type by name error', err);
+    return res.status(500).json({ message: 'Error en servidor' });
+  }
+});
+
+// Crear un nuevo tipo de actividad (requiere autenticación)
+app.post('/activity-types', authMiddleware, async (req, res) => {
+  try {
+    const {
+      id,
+      name,
+      title,
+      description,
+      infoTooltip,
+      iconName,
+      colorValue,
+      order,
+      isNew,
+      isHighlighted,
+      isEnabled,
+      category,
+    } = req.body || {};
+
+    if (!name || !title) {
+      return res.status(400).json({ message: 'name y title son obligatorios' });
+    }
+
+    const activityId = id || uuidv4();
+
+    const { rows } = await pool.query(
+      `INSERT INTO activity_type (
+        id, name, title, description, info_tooltip,
+        icon_name, color_value, "order", is_new,
+        is_highlighted, is_enabled, category
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      RETURNING *`,
+      [
+        activityId,
+        name,
+        title,
+        description || '',
+        infoTooltip || '',
+        iconName || 'help_outline',
+        colorValue || 0xFF2196F3,
+        order || 999,
+        isNew || false,
+        isHighlighted || false,
+        isEnabled !== undefined ? isEnabled : true,
+        category,
+      ]
+    );
+
+    const row = rows[0];
+    const activity = {
+      id: row.id,
+      name: row.name,
+      title: row.title,
+      description: row.description,
+      infoTooltip: row.info_tooltip,
+      iconName: row.icon_name,
+      colorValue: row.color_value,
+      order: row.order,
+      isNew: row.is_new,
+      isHighlighted: row.is_highlighted,
+      isEnabled: row.is_enabled,
+      category: row.category,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+
+    return res.status(201).json(activity);
+  } catch (err) {
+    console.error('Create activity type error', err);
+    if (err.code === '23505') {
+      // Unique violation
+      return res.status(409).json({ message: 'Ya existe una actividad con ese nombre' });
+    }
+    return res.status(500).json({ message: 'Error en servidor' });
+  }
+});
+
+// Actualizar un tipo de actividad (requiere autenticación)
+app.put('/activity-types/:id', authMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      name,
+      title,
+      description,
+      infoTooltip,
+      iconName,
+      colorValue,
+      order,
+      isNew,
+      isHighlighted,
+      isEnabled,
+      category,
+    } = req.body || {};
+
+    const { rows } = await pool.query(
+      `UPDATE activity_type SET
+        name = COALESCE($2, name),
+        title = COALESCE($3, title),
+        description = COALESCE($4, description),
+        info_tooltip = COALESCE($5, info_tooltip),
+        icon_name = COALESCE($6, icon_name),
+        color_value = COALESCE($7, color_value),
+        "order" = COALESCE($8, "order"),
+        is_new = COALESCE($9, is_new),
+        is_highlighted = COALESCE($10, is_highlighted),
+        is_enabled = COALESCE($11, is_enabled),
+        category = COALESCE($12, category),
+        updated_at = now()
+      WHERE id = $1
+      RETURNING *`,
+      [
+        id,
+        name,
+        title,
+        description,
+        infoTooltip,
+        iconName,
+        colorValue,
+        order,
+        isNew,
+        isHighlighted,
+        isEnabled,
+        category,
+      ]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ message: 'Actividad no encontrada' });
+    }
+
+    const row = rows[0];
+    const activity = {
+      id: row.id,
+      name: row.name,
+      title: row.title,
+      description: row.description,
+      infoTooltip: row.info_tooltip,
+      iconName: row.icon_name,
+      colorValue: row.color_value,
+      order: row.order,
+      isNew: row.is_new,
+      isHighlighted: row.is_highlighted,
+      isEnabled: row.is_enabled,
+      category: row.category,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+
+    return res.json(activity);
+  } catch (err) {
+    console.error('Update activity type error', err);
+    return res.status(500).json({ message: 'Error en servidor' });
+  }
+});
+
+// Eliminar un tipo de actividad (requiere autenticación)
+app.delete('/activity-types/:id', authMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { rowCount } = await pool.query(
+      'DELETE FROM activity_type WHERE id = $1',
+      [id]
+    );
+
+    if (rowCount === 0) {
+      return res.status(404).json({ message: 'Actividad no encontrada' });
+    }
+
+    return res.status(204).send();
+  } catch (err) {
+    console.error('Delete activity type error', err);
+    return res.status(500).json({ message: 'Error en servidor' });
+  }
+});
+
+// Reordenar tipos de actividades (requiere autenticación)
+app.put('/activity-types/reorder', authMiddleware, async (req, res) => {
+  try {
+    const { activities } = req.body || {};
+
+    if (!Array.isArray(activities)) {
+      return res.status(400).json({ message: 'activities debe ser un array' });
+    }
+
+    // Actualizar el orden de cada actividad
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      for (const activity of activities) {
+        if (!activity.id || activity.order === undefined) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({ message: 'Cada actividad debe tener id y order' });
+        }
+
+        await client.query(
+          'UPDATE activity_type SET "order" = $2, updated_at = now() WHERE id = $1',
+          [activity.id, activity.order]
+        );
+      }
+
+      await client.query('COMMIT');
+      return res.json({ message: 'Orden actualizado correctamente' });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    console.error('Reorder activity types error', err);
+    return res.status(500).json({ message: 'Error en servidor' });
+  }
+});
+
 app.listen(port, () => {
   console.log(`API listening on :${port}`);
 });
-// Force redeploy 1765485346
-// Force redeploy 1765485365
-// Deploy v2.2.1 1765489091
+// Deploy v2.3.0 - Activity Types CRUD endpoints added
