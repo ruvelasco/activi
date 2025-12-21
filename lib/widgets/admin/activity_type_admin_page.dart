@@ -156,7 +156,16 @@ class _ActivityTypeAdminPageState extends State<ActivityTypeAdminPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Administración de Actividades'),
-        backgroundColor: Colors.deepPurple,
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                Color(0xFF6A1B9A),
+                Color(0xFF8E24AA),
+              ],
+            ),
+          ),
+        ),
         foregroundColor: Colors.white,
         actions: [
           IconButton(
@@ -221,7 +230,7 @@ class _ActivityTypeAdminPageState extends State<ActivityTypeAdminPage> {
                                   width: 40,
                                   height: 40,
                                   decoration: BoxDecoration(
-                                    color: activity.color.withOpacity(0.2),
+                                    color: activity.color.withValues(alpha: 0.2),
                                     borderRadius: BorderRadius.circular(8),
                                   ),
                                   child: Icon(
@@ -308,7 +317,7 @@ class _ActivityTypeAdminPageState extends State<ActivityTypeAdminPage> {
                                 Switch(
                                   value: activity.isEnabled,
                                   onChanged: (_) => _toggleEnabled(activity),
-                                  activeColor: Colors.green,
+                                  activeTrackColor: Colors.green,
                                 ),
                                 PopupMenuButton<String>(
                                   onSelected: (value) {
@@ -351,7 +360,7 @@ class _ActivityTypeAdminPageState extends State<ActivityTypeAdminPage> {
         onPressed: _createActivity,
         icon: const Icon(Icons.add),
         label: const Text('Nueva Actividad'),
-        backgroundColor: Colors.deepPurple,
+        backgroundColor: const Color(0xFF6A1B9A),
         foregroundColor: Colors.white,
       ),
     );

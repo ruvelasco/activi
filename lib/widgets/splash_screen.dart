@@ -5,10 +5,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 class SplashScreen extends StatefulWidget {
   final Widget child;
 
-  const SplashScreen({
-    super.key,
-    required this.child,
-  });
+  const SplashScreen({super.key, required this.child});
 
   @override
   State<SplashScreen> createState() => _SplashScreenState();
@@ -60,13 +57,9 @@ class _SplashScreenState extends State<SplashScreen>
     );
 
     // Animación de rotación sutil (solo 5 grados)
-    _rotateAnimation = Tween<double>(
-      begin: -0.05,
-      end: 0.05,
-    ).animate(CurvedAnimation(
-      parent: _rotateController,
-      curve: Curves.easeInOut,
-    ));
+    _rotateAnimation = Tween<double>(begin: -0.05, end: 0.05).animate(
+      CurvedAnimation(parent: _rotateController, curve: Curves.easeInOut),
+    );
 
     // Iniciar animaciones
     _startAnimations();
@@ -116,14 +109,14 @@ class _SplashScreenState extends State<SplashScreen>
   Widget _buildSplashContent() {
     return Scaffold(
       body: Container(
-        decoration: BoxDecoration(
+        decoration: const BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [
-              const Color(0xFF4A90E2),
-              const Color(0xFF357ABD),
-              const Color(0xFF2E6BA8),
+              Color(0xFF6A1B9A), // Púrpura vibrante
+              Color(0xFF8E24AA), // Púrpura medio
+              Color(0xFFAB47BC), // Púrpura claro
             ],
           ),
         ),
@@ -146,19 +139,27 @@ class _SplashScreenState extends State<SplashScreen>
                     width: 200,
                     height: 200,
                     decoration: BoxDecoration(
-                      shape: BoxShape.circle,
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(24),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.white.withValues(alpha: 0.3),
+                          color: Colors.black.withValues(alpha: 0.3),
+                          blurRadius: 30,
+                          spreadRadius: 5,
+                          offset: const Offset(0, 10),
+                        ),
+                        BoxShadow(
+                          color: Colors.white.withValues(alpha: 0.2),
                           blurRadius: 40,
-                          spreadRadius: 10,
+                          spreadRadius: -5,
+                          offset: const Offset(0, -5),
                         ),
                       ],
                     ),
+                    padding: const EdgeInsets.all(24),
                     child: SvgPicture.asset(
-                      'assets/icon.svg',
-                      width: 200,
-                      height: 200,
+                      'assets/logo.svg',
+                      fit: BoxFit.contain,
                     ),
                   ),
                 ),
@@ -171,7 +172,7 @@ class _SplashScreenState extends State<SplashScreen>
                 child: Column(
                   children: [
                     Text(
-                      'ARASAAC',
+                      'MIS ACTIVIDADES',
                       style: TextStyle(
                         fontSize: 42,
                         fontWeight: FontWeight.bold,
@@ -188,7 +189,7 @@ class _SplashScreenState extends State<SplashScreen>
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Activities',
+                      'V.1.0.1',
                       style: TextStyle(
                         fontSize: 28,
                         fontWeight: FontWeight.w300,

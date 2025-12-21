@@ -45,16 +45,26 @@ class ActivityAppBar extends StatelessWidget implements PreferredSizeWidget {
   @override
   Widget build(BuildContext context) {
     return AppBar(
-      backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-      title: const Text('Creador de Actividades ARASAAC v2.2.2'),
+      flexibleSpace: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              Color(0xFF6A1B9A),
+              Color(0xFF8E24AA),
+            ],
+          ),
+        ),
+      ),
+      foregroundColor: Colors.white,
+      title: const Text('Mis Actividades ARASAAC v2.2.2'),
       actions: [
         IconButton(
-          icon: const Icon(Icons.undo),
+          icon: const Icon(Icons.undo, color: Colors.white),
           onPressed: canUndo ? onUndo : null,
           tooltip: 'Deshacer',
         ),
         IconButton(
-          icon: const Icon(Icons.redo),
+          icon: const Icon(Icons.redo, color: Colors.white),
           onPressed: canRedo ? onRedo : null,
           tooltip: 'Rehacer',
         ),
@@ -63,21 +73,23 @@ class ActivityAppBar extends StatelessWidget implements PreferredSizeWidget {
           onPressed: onClear,
           tooltip: 'Limpiar página',
         ),
-        IconButton(
-          icon: const Icon(Icons.note_add),
-          onPressed: onNewProject,
-          tooltip: 'Nuevo proyecto',
-        ),
-        IconButton(
-          icon: const Icon(Icons.save),
-          onPressed: isPersisting ? null : onSaveProject,
-          tooltip: 'Guardar proyecto',
-        ),
-        IconButton(
-          icon: const Icon(Icons.folder_open),
-          onPressed: onLoadProject,
-          tooltip: 'Mis proyectos',
-        ),
+        if (isLoggedIn) ...[
+          IconButton(
+            icon: const Icon(Icons.note_add),
+            onPressed: onNewProject,
+            tooltip: 'Nuevo proyecto',
+          ),
+          IconButton(
+            icon: const Icon(Icons.save),
+            onPressed: isPersisting ? null : onSaveProject,
+            tooltip: 'Guardar proyecto',
+          ),
+          IconButton(
+            icon: const Icon(Icons.folder_open),
+            onPressed: onLoadProject,
+            tooltip: 'Mis proyectos',
+          ),
+        ],
         const SizedBox(width: 8),
         IconButton(
           icon: const Icon(Icons.picture_as_pdf),

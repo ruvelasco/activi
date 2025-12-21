@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 class AuthDialog extends StatefulWidget {
   final Future<bool> Function(String email, String password) onLogin;
@@ -92,14 +93,12 @@ class _AuthDialogState extends State<AuthDialog> with SingleTickerProviderStateM
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-
     return Dialog(
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(20),
       ),
       child: Container(
-        width: 450,
+        width: 380,
         constraints: const BoxConstraints(maxHeight: 600),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -107,26 +106,36 @@ class _AuthDialogState extends State<AuthDialog> with SingleTickerProviderStateM
             // Header con gradiente
             Container(
               padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
+              decoration: const BoxDecoration(
                 gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
                   colors: [
-                    colorScheme.primary,
-                    colorScheme.primary.withOpacity(0.8),
+                    Color(0xFF6A1B9A), // Púrpura vibrante
+                    Color(0xFF8E24AA), // Púrpura medio
                   ],
                 ),
-                borderRadius: const BorderRadius.only(
+                borderRadius: BorderRadius.only(
                   topLeft: Radius.circular(20),
                   topRight: Radius.circular(20),
                 ),
               ),
               child: Column(
                 children: [
-                  Icon(
-                    Icons.auto_awesome,
-                    size: 48,
-                    color: Colors.white,
+                  Container(
+                    width: 64,
+                    height: 64,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    padding: const EdgeInsets.all(8),
+                    child: SvgPicture.asset(
+                      'assets/logo.svg',
+                      fit: BoxFit.contain,
+                    ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 12),
                   const Text(
                     'ARASAAC Actividades',
                     style: TextStyle(
@@ -136,11 +145,11 @@ class _AuthDialogState extends State<AuthDialog> with SingleTickerProviderStateM
                     ),
                   ),
                   const SizedBox(height: 4),
-                  Text(
+                  const Text(
                     'Creador de actividades educativas',
                     style: TextStyle(
                       fontSize: 14,
-                      color: Colors.white.withOpacity(0.9),
+                      color: Color(0xE6FFFFFF),
                     ),
                   ),
                 ],
@@ -152,9 +161,9 @@ class _AuthDialogState extends State<AuthDialog> with SingleTickerProviderStateM
               color: Colors.grey[100],
               child: TabBar(
                 controller: _tabController,
-                labelColor: colorScheme.primary,
+                labelColor: const Color(0xFF6A1B9A),
                 unselectedLabelColor: Colors.grey[600],
-                indicatorColor: colorScheme.primary,
+                indicatorColor: const Color(0xFF6A1B9A),
                 indicatorWeight: 3,
                 tabs: const [
                   Tab(text: 'Iniciar Sesión'),
@@ -267,7 +276,7 @@ class _AuthDialogState extends State<AuthDialog> with SingleTickerProviderStateM
                       ElevatedButton(
                         onPressed: _isLoading ? null : _submit,
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: colorScheme.primary,
+                          backgroundColor: const Color(0xFF6A1B9A),
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 16),
                           shape: RoundedRectangleBorder(

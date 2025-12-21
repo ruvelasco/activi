@@ -22,6 +22,7 @@ import 'widgets/dynamic_activity_creator_panel.dart';
 import 'widgets/activity_app_bar.dart';
 import 'widgets/sidebar_panel.dart';
 import 'widgets/auth/auth_dialog.dart';
+import 'widgets/splash_screen.dart';
 import 'actividades/shadow_matching_activity.dart';
 import 'actividades/puzzle_activity.dart';
 import 'actividades/writing_practice_activity.dart';
@@ -58,10 +59,12 @@ class MyApp extends StatelessWidget {
       title: 'ARASAAC Activities',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF6A1B9A)),
         useMaterial3: true,
       ),
-      home: const ActivityCreatorPage(),
+      home: const SplashScreen(
+        child: ActivityCreatorPage(),
+      ),
     );
   }
 }
