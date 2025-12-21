@@ -31,12 +31,17 @@ app.get('/health', (_req, res) => {
 // Endpoint temporal para ejecutar migraciones
 app.post('/migrations/run', async (req, res) => {
   // Permitir migraciones con token secreto o en desarrollo
-  const { secret } = req.body || {};
+  const { secret, dropTable } = req.body || {};
   if (process.env.NODE_ENV === 'production' && secret !== process.env.JWT_SECRET) {
     return res.status(403).json({ message: 'No permitido sin autenticación' });
   }
 
   try {
+    // Opcionalmente eliminar la tabla si se solicita
+    if (dropTable) {
+      await pool.query(`DROP TABLE IF EXISTS activity_type CASCADE`);
+    }
+
     // Crear tabla activity_type
     await pool.query(`
       CREATE TABLE IF NOT EXISTS activity_type (
