@@ -21,6 +21,7 @@ import 'widgets/template_menu.dart';
 import 'widgets/dynamic_activity_creator_panel.dart';
 import 'widgets/activity_app_bar.dart';
 import 'widgets/sidebar_panel.dart';
+import 'widgets/auth/auth_dialog.dart';
 import 'actividades/shadow_matching_activity.dart';
 import 'actividades/puzzle_activity.dart';
 import 'actividades/writing_practice_activity.dart';
@@ -215,107 +216,52 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
   }
 
   Future<void> _showAuthDialog() async {
-    final usernameController = TextEditingController();
-    final passwordController = TextEditingController();
-    bool isRegister = false;
-
-    await showDialog(
+    final result = await showDialog<bool>(
       context: context,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setLocalState) {
-            return AlertDialog(
-              title: Text(isRegister ? 'Crear cuenta' : 'Iniciar sesión'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: usernameController,
-                    decoration: const InputDecoration(labelText: 'Email'),
-                  ),
-                  TextField(
-                    controller: passwordController,
-                    obscureText: true,
-                    decoration: const InputDecoration(labelText: 'Contraseña'),
-                  ),
-                  const SizedBox(height: 12),
-                  TextButton(
-                    onPressed: () =>
-                        setLocalState(() => isRegister = !isRegister),
-                    child: Text(
-                      isRegister
-                          ? 'Tengo cuenta, entrar'
-                          : 'No tengo cuenta, registrarme',
-                    ),
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('Cancelar'),
+      barrierDismissible: false,
+      builder: (context) => AuthDialog(
+        onLogin: (email, password) async {
+          final user = await _userService.login(email, password);
+          if (user != null) {
+            setState(() {
+              _currentUser = user;
+              _activeProjectId = null;
+            });
+            return true;
+          }
+          return false;
+        },
+        onRegister: (email, password) async {
+          final user = await _userService.register(email, password);
+          if (user != null) {
+            setState(() {
+              _currentUser = user;
+              _activeProjectId = null;
+            });
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('¡Cuenta creada exitosamente!'),
+                  backgroundColor: Colors.green,
                 ),
-                ElevatedButton(
-                  onPressed: () async {
-                    final username = usernameController.text.trim();
-                    final password = passwordController.text.trim();
-                    if (username.isEmpty || password.isEmpty) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text(
-                            'Introduce usuario y contraseña válidos',
-                          ),
-                        ),
-                      );
-                      return;
-                    }
-
-                    if (isRegister) {
-                      final newUser = await _userService.register(
-                        username,
-                        password,
-                      );
-                      if (newUser == null) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              _userService.lastError ??
-                                  'Error al registrar usuario',
-                            ),
-                          ),
-                        );
-                        return;
-                      }
-                      setState(() {
-                        _currentUser = newUser;
-                        _activeProjectId = null;
-                      });
-                    } else {
-                      final user = await _userService.login(username, password);
-                      if (user == null) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Credenciales incorrectas'),
-                          ),
-                        );
-                        return;
-                      }
-                      setState(() {
-                        _currentUser = user;
-                        _activeProjectId = null;
-                      });
-                    }
-
-                    if (context.mounted) Navigator.of(context).pop();
-                  },
-                  child: Text(isRegister ? 'Crear' : 'Entrar'),
-                ),
-              ],
-            );
-          },
-        );
-      },
+              );
+            }
+            return true;
+          }
+          return false;
+        },
+        errorMessage: _userService.lastError,
+      ),
     );
+
+    if (result == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('¡Bienvenido ${_currentUser?.username}!'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    }
   }
 
   void _newProject() {
