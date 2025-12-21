@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS activity_type (
   description TEXT NOT NULL DEFAULT '',
   info_tooltip TEXT NOT NULL DEFAULT '',
   icon_name TEXT NOT NULL DEFAULT 'help_outline',
-  color_value INTEGER NOT NULL DEFAULT 4280391411,
+  color_value BIGINT NOT NULL DEFAULT 4280391411,
   "order" INTEGER NOT NULL DEFAULT 999,
   is_new BOOLEAN NOT NULL DEFAULT false,
   is_highlighted BOOLEAN NOT NULL DEFAULT false,
