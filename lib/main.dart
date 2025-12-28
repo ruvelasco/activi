@@ -163,6 +163,9 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
   final List<List<List<CanvasImage>>> _history = [[]]; // Historial de estados
   int _historyIndex = 0; // Índice actual en el historial
 
+  // Instrucciones visuales temporales para añadir después de generar actividad
+  CanvasImage? _pendingVisualInstructions;
+
   Future<void> _loadUserLogoPreference() async {
     if (_currentUser == null) return;
     final prefs = await SharedPreferences.getInstance();
@@ -1159,9 +1162,19 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
           final pageIndex = _currentPage + i;
           _pages[pageIndex].clear();
           _pages[pageIndex].addAll(result.pages[i]);
+          if (i == 0) {
+            _addPendingVisualInstructions(pageIndex);
+          }
+
+          // Añadir instrucciones visuales en la primera página si hay pendientes
+          if (i == 0) {
+            _addPendingVisualInstructions(pageIndex);
+          }
+
           _pageTemplates[pageIndex] = TemplateType.blank;
           _pageOrientations[pageIndex] = _pageOrientations[_currentPage];
         }
+
         // Aplicar título e instrucciones desde backend o valores por defecto
         _applyTitleAndInstructions(
           'shadow_matching',
@@ -1254,6 +1267,9 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
           final pageIndex = _currentPage + i;
           _pages[pageIndex].clear();
           _pages[pageIndex].addAll(result.pages[i]);
+          if (i == 0) {
+            _addPendingVisualInstructions(pageIndex);
+          }
           _pageTemplates[pageIndex] = TemplateType.blank;
           _pageOrientations[pageIndex] = _pageOrientations[_currentPage];
         }
@@ -1359,6 +1375,7 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
       // Página actual: Imagen de referencia en sombra
       _pages[_currentPage].clear();
       _pages[_currentPage].addAll(result.referencePage);
+      _addPendingVisualInstructions(_currentPage);
 
       // Página siguiente: Piezas recortables
       _pages[nextPage].clear();
@@ -1567,6 +1584,9 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
         final pageIndex = _currentPage + i;
         _pages[pageIndex].clear();
         _pages[pageIndex].addAll(result.pages[i]);
+        if (i == 0) {
+          _addPendingVisualInstructions(pageIndex);
+        }
         _pageTemplates[pageIndex] = TemplateType.writingPractice;
         _pageOrientations[pageIndex] = _pageOrientations[_currentPage];
       }
@@ -1696,6 +1716,9 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
           final pageIndex = _currentPage + i;
           _pages[pageIndex].clear();
           _pages[pageIndex].addAll(result.pages[i]);
+          if (i == 0) {
+            _addPendingVisualInstructions(pageIndex);
+          }
           _pageTemplates[pageIndex] = TemplateType.countingPractice;
           _pageOrientations[pageIndex] = _pageOrientations[_currentPage];
         }
@@ -1782,6 +1805,9 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
         final pageIndex = _currentPage + i;
         _pages[pageIndex].clear();
         _pages[pageIndex].addAll(result.pages[i]);
+          if (i == 0) {
+            _addPendingVisualInstructions(pageIndex);
+          }
       }
       // Aplicar título e instrucciones desde backend o valores por defecto
       _applyTitleAndInstructions(
@@ -1856,6 +1882,9 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
         final pageIndex = _currentPage + i;
         _pages[pageIndex].clear();
         _pages[pageIndex].addAll(result.pages[i]);
+          if (i == 0) {
+            _addPendingVisualInstructions(pageIndex);
+          }
       }
       // Aplicar título e instrucciones desde backend o valores por defecto
       _applyTitleAndInstructions(
@@ -1910,6 +1939,9 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
         final pageIndex = _currentPage + i;
         _pages[pageIndex].clear();
         _pages[pageIndex].addAll(result.pages[i]);
+          if (i == 0) {
+            _addPendingVisualInstructions(pageIndex);
+          }
         _pageTemplates[pageIndex] = TemplateType.blank;
         _pageOrientations[pageIndex] = _pageOrientations[_currentPage];
       }
@@ -2003,6 +2035,7 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
       setState(() {
         _pages[_currentPage].clear();
         _pages[_currentPage].addAll(result.elements);
+        _addPendingVisualInstructions(_currentPage);
       // Aplicar título e instrucciones desde backend o valores por defecto
       _applyTitleAndInstructions(
         'phrases',
@@ -2147,6 +2180,9 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
         final pageIndex = _currentPage + i;
         _pages[pageIndex].clear();
         _pages[pageIndex].addAll(result.pages[i]);
+          if (i == 0) {
+            _addPendingVisualInstructions(pageIndex);
+          }
         _pageTemplates[pageIndex] = TemplateType.blank;
         _pageOrientations[pageIndex] = _pageOrientations[_currentPage];
       }
@@ -2201,6 +2237,9 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
         final pageIndex = _currentPage + i;
         _pages[pageIndex].clear();
         _pages[pageIndex].addAll(result.pages[i]);
+          if (i == 0) {
+            _addPendingVisualInstructions(pageIndex);
+          }
         _pageTemplates[pageIndex] = TemplateType.blank;
         _pageOrientations[pageIndex] = _pageOrientations[_currentPage];
       }
@@ -2375,6 +2414,8 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
       setState(() {
         _pages[_currentPage].clear();
         _pages[_currentPage].addAll(result.pages[0]);
+        _addPendingVisualInstructions(_currentPage);
+        _addPendingVisualInstructions(_currentPage);
       // Aplicar título e instrucciones desde backend o valores por defecto
       _applyTitleAndInstructions(
         'phonological_squares',
@@ -2422,6 +2463,7 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
       setState(() {
         _pages[_currentPage].clear();
         _pages[_currentPage].addAll(result.pages[0]);
+        _addPendingVisualInstructions(_currentPage);
       // Aplicar título e instrucciones desde backend o valores por defecto
       _applyTitleAndInstructions(
         'crossword',
@@ -2467,6 +2509,7 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
       setState(() {
         _pages[_currentPage].clear();
         _pages[_currentPage].addAll(result.pages[0]);
+        _addPendingVisualInstructions(_currentPage);
       // Aplicar título e instrucciones desde backend o valores por defecto
       _applyTitleAndInstructions(
         'word_search',
@@ -2601,6 +2644,7 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
       setState(() {
         _pages[_currentPage].clear();
         _pages[_currentPage].addAll(result.pages[0]);
+        _addPendingVisualInstructions(_currentPage);
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -2676,6 +2720,7 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
       setState(() {
         _pages[_currentPage].clear();
         _pages[_currentPage].addAll(result.pages[0]);
+        _addPendingVisualInstructions(_currentPage);
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -2738,6 +2783,7 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
     setState(() {
       _pages[_currentPage].clear();
       _pages[_currentPage].addAll(result.elements);
+      _addPendingVisualInstructions(_currentPage);
     });
 
     ScaffoldMessenger.of(context).showSnackBar(
@@ -2745,6 +2791,17 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
         content: Text(result.message ?? 'Actividad de instrucciones generada'),
       ),
     );
+  }
+
+  /// Añade las instrucciones visuales pendientes a una página si existen
+  void _addPendingVisualInstructions(int pageIndex) {
+    if (_pendingVisualInstructions != null) {
+      _pages[pageIndex].add(_pendingVisualInstructions!);
+      if (kDebugMode) {
+        print('=== DEBUG: Instrucciones visuales añadidas a la página $pageIndex');
+      }
+      _pendingVisualInstructions = null;
+    }
   }
 
   /// Mapeo de nombres de actividad a sus métodos de generación
@@ -2775,30 +2832,26 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
         print('=== DEBUG: materialPictogramUrls: ${activityType.materialPictogramUrls}');
       }
 
-      // Si tiene instrucciones visuales configuradas, añadirlas al canvas
+      // Si tiene instrucciones visuales configuradas, guardarlas para añadir después
       if (activityType.activityPictogramUrl != null ||
           (activityType.materialPictogramUrls != null &&
               activityType.materialPictogramUrls!.isNotEmpty)) {
         if (kDebugMode) {
-          print('=== DEBUG: Añadiendo barra de instrucciones visuales');
+          print('=== DEBUG: Guardando instrucciones visuales para añadir después');
         }
 
-        final visualInstructionsBar = CanvasImage.visualInstructionsBar(
+        _pendingVisualInstructions = CanvasImage.visualInstructionsBar(
           id: _generateId(),
           position: const Offset(100, 100),
           activityPictogramUrl: activityType.activityPictogramUrl,
           materialPictogramUrls: activityType.materialPictogramUrls,
         );
 
-        setState(() {
-          _canvasImages.add(visualInstructionsBar);
-          _saveToHistory();
-        });
-
         if (kDebugMode) {
-          print('=== DEBUG: Barra de instrucciones añadida al canvas');
+          print('=== DEBUG: Instrucciones guardadas temporalmente');
         }
       } else {
+        _pendingVisualInstructions = null;
         if (kDebugMode) {
           print('=== DEBUG: No hay instrucciones visuales configuradas para esta actividad');
         }
