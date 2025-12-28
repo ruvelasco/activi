@@ -242,18 +242,6 @@ PuzzleActivityResult generatePuzzleActivity({
     ),
   );
 
-  // Añadir texto de recortar en esquina superior izquierda
-  piecesPage.add(
-    CanvasImage.text(
-      id: 'scissors_label',
-      text: '✂ RECORTAR',
-      position: const Offset(20, 20),
-      fontSize: 24.0,
-      textColor: Colors.grey[800]!,
-      isBold: true,
-    ),
-  );
-
   return PuzzleActivityResult(
     referencePage: referencePage,
     piecesPage: piecesPage,

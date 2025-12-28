@@ -59,12 +59,18 @@ class ActivityAppBar extends StatelessWidget implements PreferredSizeWidget {
       title: const Text('Mis Actividades ARASAAC v2.2.2'),
       actions: [
         IconButton(
-          icon: const Icon(Icons.undo, color: Colors.white),
+          icon: Icon(
+            Icons.undo,
+            color: canUndo ? Colors.white : Colors.white.withValues(alpha: 0.4),
+          ),
           onPressed: canUndo ? onUndo : null,
           tooltip: 'Deshacer',
         ),
         IconButton(
-          icon: const Icon(Icons.redo, color: Colors.white),
+          icon: Icon(
+            Icons.redo,
+            color: canRedo ? Colors.white : Colors.white.withValues(alpha: 0.4),
+          ),
           onPressed: canRedo ? onRedo : null,
           tooltip: 'Rehacer',
         ),

@@ -12,8 +12,11 @@ class ProjectData {
   final List<TemplateType> templates;
   final List<Color> backgrounds;
   final List<bool> orientations;
-  final String? headerText;
-  final String? footerText;
+  final List<String> pageTitles; // Título de cada página
+  final List<String> pageInstructions; // Instrucciones de cada página
+  final String? documentFooter; // Pie de página del documento (autor, licencia, etc)
+  final String? headerText; // DEPRECATED: Mantener para compatibilidad
+  final String? footerText; // DEPRECATED: Mantener para compatibilidad
   final HeaderFooterScope headerScope;
   final HeaderFooterScope footerScope;
   final bool showPageNumbers;
@@ -30,8 +33,11 @@ class ProjectData {
     required this.templates,
     required this.backgrounds,
     required this.orientations,
-    required this.headerText,
-    required this.footerText,
+    List<String>? pageTitles,
+    List<String>? pageInstructions,
+    this.documentFooter,
+    this.headerText, // DEPRECATED
+    this.footerText, // DEPRECATED
     required this.headerScope,
     required this.footerScope,
     required this.showPageNumbers,
@@ -39,7 +45,8 @@ class ProjectData {
     required this.logoPosition,
     required this.logoSize,
     this.coverImage,
-  });
+  })  : pageTitles = pageTitles ?? [],
+        pageInstructions = pageInstructions ?? [];
 
   ProjectData copyWith({
     String? id,
@@ -49,6 +56,9 @@ class ProjectData {
     List<TemplateType>? templates,
     List<Color>? backgrounds,
     List<bool>? orientations,
+    List<String>? pageTitles,
+    List<String>? pageInstructions,
+    String? documentFooter,
     String? headerText,
     String? footerText,
     HeaderFooterScope? headerScope,
@@ -67,6 +77,9 @@ class ProjectData {
       templates: templates ?? this.templates,
       backgrounds: backgrounds ?? this.backgrounds,
       orientations: orientations ?? this.orientations,
+      pageTitles: pageTitles ?? this.pageTitles,
+      pageInstructions: pageInstructions ?? this.pageInstructions,
+      documentFooter: documentFooter ?? this.documentFooter,
       headerText: headerText ?? this.headerText,
       footerText: footerText ?? this.footerText,
       headerScope: headerScope ?? this.headerScope,
@@ -90,6 +103,10 @@ class ProjectData {
       'templates': templates.map((t) => t.name).toList(),
       'backgrounds': backgrounds.map((c) => c.value).toList(),
       'orientations': orientations,
+      'pageTitles': pageTitles,
+      'pageInstructions': pageInstructions,
+      'documentFooter': documentFooter,
+      // Deprecated fields - guardar para compatibilidad
       'headerText': headerText,
       'footerText': footerText,
       'headerScope': headerScope.name,
@@ -103,6 +120,22 @@ class ProjectData {
   }
 
   factory ProjectData.fromJson(Map<String, dynamic> json) {
+    // Compatibilidad hacia atrás: si existen pageTitles/pageInstructions usarlos,
+    // sino usar headerText/footerText para la primera página
+    List<String> pageTitles;
+    List<String> pageInstructions;
+
+    if (json['pageTitles'] != null) {
+      pageTitles = (json['pageTitles'] as List<dynamic>).cast<String>().toList();
+      pageInstructions = (json['pageInstructions'] as List<dynamic>?)?.cast<String>().toList() ?? [];
+    } else {
+      // Migración desde el formato antiguo
+      final headerText = json['headerText'] as String?;
+      final footerText = json['footerText'] as String?;
+      pageTitles = headerText != null ? [headerText] : [];
+      pageInstructions = footerText != null ? [footerText] : [];
+    }
+
     return ProjectData(
       id: json['id'] as String,
       name: json['name'] as String? ?? 'Proyecto',
@@ -126,6 +159,9 @@ class ProjectData {
           .toList(),
       orientations:
           (json['orientations'] as List<dynamic>? ?? []).cast<bool>().toList(),
+      pageTitles: pageTitles,
+      pageInstructions: pageInstructions,
+      documentFooter: json['documentFooter'] as String?,
       headerText: json['headerText'] as String?,
       footerText: json['footerText'] as String?,
       headerScope: HeaderFooterScope.values.firstWhere(

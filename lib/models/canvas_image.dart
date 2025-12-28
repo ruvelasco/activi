@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
-enum CanvasElementType { networkImage, localImage, text, shape, pictogramCard, shadow }
+enum CanvasElementType { networkImage, localImage, text, shape, pictogramCard, shadow, visualInstructionsBar }
 
 enum ShapeType { line, circle, rectangle, arrow, triangle }
 
@@ -35,6 +35,8 @@ class CanvasImage {
   Color shapeColor; // Para shape
   double strokeWidth; // Para shape (grosor de línea)
   bool isDashed; // Para shape (línea discontinua)
+  final String? activityPictogramUrl; // Para visualInstructionsBar
+  final List<String>? materialPictogramUrls; // Para visualInstructionsBar
   Offset position;
   double scale;
   double? width;
@@ -64,6 +66,8 @@ class CanvasImage {
     this.shapeColor = Colors.black,
     this.strokeWidth = 2.0,
     this.isDashed = false,
+    this.activityPictogramUrl,
+    this.materialPictogramUrls,
     required this.position,
     this.scale = 1.0,
     this.width,
@@ -212,6 +216,26 @@ class CanvasImage {
     );
   }
 
+  // Constructor para barra de instrucciones visuales
+  factory CanvasImage.visualInstructionsBar({
+    required String id,
+    String? activityPictogramUrl,
+    List<String>? materialPictogramUrls,
+    required Offset position,
+    double scale = 1.0,
+  }) {
+    return CanvasImage(
+      id: id,
+      type: CanvasElementType.visualInstructionsBar,
+      activityPictogramUrl: activityPictogramUrl,
+      materialPictogramUrls: materialPictogramUrls ?? [],
+      position: position,
+      scale: scale,
+      width: 400,  // Ancho por defecto de la barra
+      height: 80,  // Alto por defecto de la barra
+    );
+  }
+
   CanvasImage copyWith({
     String? id,
     CanvasElementType? type,
@@ -230,6 +254,8 @@ class CanvasImage {
     Color? shapeColor,
     double? strokeWidth,
     bool? isDashed,
+    String? activityPictogramUrl,
+    List<String>? materialPictogramUrls,
     Offset? position,
     double? scale,
     double? width,
@@ -257,6 +283,8 @@ class CanvasImage {
       shapeColor: shapeColor ?? this.shapeColor,
       strokeWidth: strokeWidth ?? this.strokeWidth,
       isDashed: isDashed ?? this.isDashed,
+      activityPictogramUrl: activityPictogramUrl ?? this.activityPictogramUrl,
+      materialPictogramUrls: materialPictogramUrls ?? this.materialPictogramUrls,
       position: position ?? this.position,
       scale: scale ?? this.scale,
       width: width ?? this.width,
@@ -286,6 +314,8 @@ class CanvasImage {
       'shapeColor': shapeColor.value,
       'strokeWidth': strokeWidth,
       'isDashed': isDashed,
+      'activityPictogramUrl': activityPictogramUrl,
+      'materialPictogramUrls': materialPictogramUrls,
       'position': {'dx': position.dx, 'dy': position.dy},
       'scale': scale,
       'width': width,
@@ -323,6 +353,10 @@ class CanvasImage {
       shapeColor: Color(json['shapeColor'] as int? ?? Colors.black.value),
       strokeWidth: (json['strokeWidth'] as num?)?.toDouble() ?? 2.0,
       isDashed: json['isDashed'] as bool? ?? false,
+      activityPictogramUrl: json['activityPictogramUrl'] as String?,
+      materialPictogramUrls: (json['materialPictogramUrls'] as List<dynamic>?)
+          ?.map((e) => e as String)
+          .toList(),
       position: Offset(
         (json['position']?['dx'] as num?)?.toDouble() ?? 0.0,
         (json['position']?['dy'] as num?)?.toDouble() ?? 0.0,

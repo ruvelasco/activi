@@ -12,7 +12,7 @@ class ClassificationActivityResult {
     required this.categoriesPage,
     required this.objectsPage,
     this.title = 'CLASIFICAR',
-    this.instructions = 'Recorta y clasifica los objetos en las categorías',
+    this.instructions = 'Clasifica los objetos en las categorías',
   });
 }
 

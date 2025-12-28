@@ -11,6 +11,7 @@ class SidebarPanel extends StatelessWidget {
   final VoidCallback onSelectTemplates;
   final VoidCallback onSelectCreator;
   final VoidCallback onSelectConfig;
+  final VoidCallback onSelectVisualInstructions;
   final bool isTextSelected;
   final bool isShapesSelected;
   final bool isArasaacSelected;
@@ -18,6 +19,7 @@ class SidebarPanel extends StatelessWidget {
   final bool isTemplatesSelected;
   final bool isCreatorSelected;
   final bool isConfigSelected;
+  final bool isVisualInstructionsSelected;
   final Widget panel;
 
   const SidebarPanel({
@@ -32,6 +34,7 @@ class SidebarPanel extends StatelessWidget {
     required this.onSelectTemplates,
     required this.onSelectCreator,
     required this.onSelectConfig,
+    required this.onSelectVisualInstructions,
     required this.isTextSelected,
     required this.isShapesSelected,
     required this.isArasaacSelected,
@@ -39,6 +42,7 @@ class SidebarPanel extends StatelessWidget {
     required this.isTemplatesSelected,
     required this.isCreatorSelected,
     required this.isConfigSelected,
+    required this.isVisualInstructionsSelected,
     required this.panel,
   });
 
@@ -72,7 +76,7 @@ class SidebarPanel extends StatelessWidget {
                               ),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: isTextSelected
-                                    ? Colors.blue[700]
+                                    ? const Color(0xFF6A1B9A)
                                     : null,
                                 foregroundColor: isTextSelected
                                     ? Colors.white
@@ -106,7 +110,7 @@ class SidebarPanel extends StatelessWidget {
                               ),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: isShapesSelected
-                                    ? Colors.blue[700]
+                                    ? const Color(0xFF6A1B9A)
                                     : null,
                                 foregroundColor: isShapesSelected
                                     ? Colors.white
@@ -125,7 +129,7 @@ class SidebarPanel extends StatelessWidget {
                               ),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: isArasaacSelected
-                                    ? Colors.blue[700]
+                                    ? const Color(0xFF6A1B9A)
                                     : null,
                                 foregroundColor: isArasaacSelected
                                     ? Colors.white
@@ -148,7 +152,7 @@ class SidebarPanel extends StatelessWidget {
                               ),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: isSoyVisualSelected
-                                    ? Colors.blue[700]
+                                    ? const Color(0xFF6A1B9A)
                                     : null,
                                 foregroundColor: isSoyVisualSelected
                                     ? Colors.white
@@ -167,7 +171,7 @@ class SidebarPanel extends StatelessWidget {
                               ),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: isTemplatesSelected
-                                    ? Colors.blue[700]
+                                    ? const Color(0xFF6A1B9A)
                                     : null,
                                 foregroundColor: isTemplatesSelected
                                     ? Colors.white
@@ -190,7 +194,7 @@ class SidebarPanel extends StatelessWidget {
                               ),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: isCreatorSelected
-                                    ? Colors.blue[700]
+                                    ? const Color(0xFF6A1B9A)
                                     : null,
                                 foregroundColor: isCreatorSelected
                                     ? Colors.white
@@ -201,6 +205,29 @@ class SidebarPanel extends StatelessWidget {
                           const SizedBox(width: 8),
                           Expanded(
                             child: ElevatedButton.icon(
+                              onPressed: onSelectVisualInstructions,
+                              icon: const Icon(Icons.view_carousel),
+                              label: const Text(
+                                'Instr.',
+                                style: TextStyle(fontSize: 13),
+                              ),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: isVisualInstructionsSelected
+                                    ? const Color(0xFF6A1B9A)
+                                    : null,
+                                foregroundColor: isVisualInstructionsSelected
+                                    ? Colors.white
+                                    : null,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton.icon(
                               onPressed: onSelectConfig,
                               icon: const Icon(Icons.settings),
                               label: const Text(
@@ -209,7 +236,7 @@ class SidebarPanel extends StatelessWidget {
                               ),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: isConfigSelected
-                                    ? Colors.blue[700]
+                                    ? const Color(0xFF6A1B9A)
                                     : null,
                                 foregroundColor: isConfigSelected
                                     ? Colors.white
@@ -217,7 +244,6 @@ class SidebarPanel extends StatelessWidget {
                               ),
                             ),
                           ),
-                          const SizedBox(width: 8),
                         ],
                       ),
                     ],
@@ -233,7 +259,7 @@ class SidebarPanel extends StatelessWidget {
             child: Container(
               margin: const EdgeInsets.only(right: 0),
               decoration: BoxDecoration(
-                color: Colors.blue[700],
+                color: const Color(0xFF6A1B9A),
                 borderRadius: const BorderRadius.only(
                   topLeft: Radius.circular(8),
                   bottomLeft: Radius.circular(8),
