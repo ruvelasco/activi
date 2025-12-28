@@ -490,10 +490,33 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
     // Guardar los valores actuales de los controllers en las listas
     _saveControllersToCurrentPage();
 
-    // Determinar imagen de portada: la primera imagen de la primera página
+    // Determinar imagen de portada: buscar primera imagen con URL (ARASAAC)
     CanvasImage? coverImage;
-    if (_pages.isNotEmpty && _pages.first.isNotEmpty) {
-      coverImage = _pages.first.first.copyWith();
+    if (_pages.isNotEmpty) {
+      // Buscar en todas las páginas la primera imagen con imageUrl
+      for (final page in _pages) {
+        final imageWithUrl = page.where((img) =>
+          img.imageUrl != null &&
+          img.imageUrl!.isNotEmpty &&
+          img.type != CanvasElementType.visualInstructionsBar
+        ).firstOrNull;
+
+        if (imageWithUrl != null) {
+          coverImage = imageWithUrl.copyWith();
+          if (kDebugMode) {
+            print('=== DEBUG: CoverImage encontrada: ${coverImage.imageUrl}');
+          }
+          break;
+        }
+      }
+
+      // Si no hay ninguna imagen con URL, tomar la primera imagen de cualquier tipo
+      if (coverImage == null && _pages.first.isNotEmpty) {
+        coverImage = _pages.first.first.copyWith();
+        if (kDebugMode) {
+          print('=== DEBUG: CoverImage fallback: tipo=${coverImage.type}, url=${coverImage.imageUrl}, path=${coverImage.imagePath}');
+        }
+      }
     }
 
     return ProjectData(

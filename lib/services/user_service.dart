@@ -230,6 +230,22 @@ class UserService {
         projectData['name'] = map['name'];
         projectData['updatedAt'] =
             projectData['updatedAt'] ?? map['updated_at']?.toString();
+
+        // Si hay cover_image_url del backend, crear coverImage con esa URL
+        final coverImageUrl = map['cover_image_url'] as String?;
+        if (coverImageUrl != null && coverImageUrl.isNotEmpty) {
+          projectData['coverImage'] = {
+            'id': 'cover',
+            'type': 'networkImage',
+            'imageUrl': coverImageUrl,
+            'position': {'dx': 0.0, 'dy': 0.0},
+            'scale': 1.0,
+          };
+          if (kDebugMode) {
+            print('=== DEBUG: Cargando coverImage desde BD: $coverImageUrl');
+          }
+        }
+
         return ProjectData.fromJson(projectData);
       }).toList();
     } catch (e) {
