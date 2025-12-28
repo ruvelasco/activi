@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS project (
   user_id UUID NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   data JSONB NOT NULL,
+  cover_image_url TEXT,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );
 

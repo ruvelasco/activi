@@ -108,6 +108,28 @@ app.post('/migrations/add-visual-instructions-columns', async (req, res) => {
   }
 });
 
+// Migración: añadir columna cover_image_url a project
+app.post('/migrations/add-cover-image-to-projects', async (req, res) => {
+  try {
+    console.log('Añadiendo columna cover_image_url a project...');
+
+    await pool.query(`
+      ALTER TABLE project
+      ADD COLUMN IF NOT EXISTS cover_image_url TEXT
+    `);
+
+    console.log('✓ Columna cover_image_url añadida correctamente');
+
+    return res.json({
+      message: 'Columna cover_image_url añadida correctamente',
+      columns: ['cover_image_url']
+    });
+  } catch (err) {
+    console.error('Migration error', err);
+    return res.status(500).json({ message: 'Error ejecutando migración', error: err.message });
+  }
+});
+
 // Endpoint temporal para poblar actividades por defecto
 app.post('/migrations/seed-activities', async (req, res) => {
   const { secret } = req.body || {};
@@ -265,7 +287,7 @@ const authMiddleware = (req, res, next) => {
 app.get('/projects', authMiddleware, async (req, res) => {
   try {
     const { rows } = await pool.query(
-      'SELECT id, name, data, updated_at FROM project WHERE user_id = $1 ORDER BY updated_at DESC',
+      'SELECT id, name, data, cover_image_url, updated_at FROM project WHERE user_id = $1 ORDER BY updated_at DESC',
       [req.user.id],
     );
     return res.json(rows);
@@ -284,17 +306,30 @@ app.post('/projects', authMiddleware, async (req, res) => {
 
     const projectId = id || uuidv4();
 
+    // Extraer URL de imagen de portada del JSON data
+    let coverImageUrl = null;
+    try {
+      const parsedData = typeof data === 'string' ? JSON.parse(data) : data;
+      if (parsedData.coverImage && parsedData.coverImage.imageUrl) {
+        coverImageUrl = parsedData.coverImage.imageUrl;
+      }
+    } catch (e) {
+      // Si falla el parsing, continuar sin imagen de portada
+      console.warn('No se pudo extraer coverImage:', e);
+    }
+
     // UPSERT: Insertar o actualizar si existe
     const { rows } = await pool.query(
-      `INSERT INTO project (id, user_id, name, data)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO project (id, user_id, name, data, cover_image_url)
+       VALUES ($1, $2, $3, $4, $5)
        ON CONFLICT (id) DO UPDATE
        SET name = EXCLUDED.name,
            data = EXCLUDED.data,
+           cover_image_url = EXCLUDED.cover_image_url,
            updated_at = now()
        WHERE project.user_id = $2
-       RETURNING id, name, data, updated_at`,
-      [projectId, req.user.id, name, data],
+       RETURNING id, name, data, cover_image_url, updated_at`,
+      [projectId, req.user.id, name, data, coverImageUrl],
     );
 
     if (rows.length === 0) {

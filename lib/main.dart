@@ -490,6 +490,12 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
     // Guardar los valores actuales de los controllers en las listas
     _saveControllersToCurrentPage();
 
+    // Determinar imagen de portada: la primera imagen de la primera página
+    CanvasImage? coverImage;
+    if (_pages.isNotEmpty && _pages.first.isNotEmpty) {
+      coverImage = _pages.first.first.copyWith();
+    }
+
     return ProjectData(
       id: _activeProjectId ?? _generateId(),
       name: name,
@@ -513,6 +519,7 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
       logoPath: _logoPath,
       logoPosition: _logoPosition,
       logoSize: _logoSize,
+      coverImage: coverImage,
     );
   }
 
@@ -572,37 +579,171 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
     final selected = await showDialog<ProjectData>(
       context: context,
       builder: (context) {
-        return AlertDialog(
-          title: const Text('Mis proyectos'),
-          content: SizedBox(
-            width: 400,
-            child: ListView.builder(
-              shrinkWrap: true,
-              itemCount: projects.length,
-              itemBuilder: (context, index) {
-                final project = projects[index];
-                return ListTile(
-                  title: Text(project.name),
-                  subtitle: Text(
-                    'Actualizado: ${project.updatedAt.toLocal().toString().split(".").first}',
+        return Dialog(
+          child: Container(
+            width: 800,
+            constraints: const BoxConstraints(maxHeight: 600),
+            child: Column(
+              children: [
+                // Header
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.primaryContainer,
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(4),
+                      topRight: Radius.circular(4),
+                    ),
                   ),
-                  onTap: () => Navigator.of(context).pop(project),
-                );
-              },
+                  child: Row(
+                    children: [
+                      const Icon(Icons.folder_open),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Mis proyectos',
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () => Navigator.of(context).pop(),
+                      ),
+                    ],
+                  ),
+                ),
+                // Grid de proyectos
+                Expanded(
+                  child: GridView.builder(
+                    padding: const EdgeInsets.all(16),
+                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 3,
+                      childAspectRatio: 0.8,
+                      crossAxisSpacing: 16,
+                      mainAxisSpacing: 16,
+                    ),
+                    itemCount: projects.length,
+                    itemBuilder: (context, index) {
+                      final project = projects[index];
+                      return _buildProjectCard(context, project);
+                    },
+                  ),
+                ),
+              ],
             ),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cancelar'),
-            ),
-          ],
         );
       },
     );
 
     if (selected != null) {
       await _loadProject(selected);
+    }
+  }
+
+  Widget _buildProjectCard(BuildContext context, ProjectData project) {
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      elevation: 2,
+      child: InkWell(
+        onTap: () => Navigator.of(context).pop(project),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Imagen de portada
+            Expanded(
+              flex: 3,
+              child: Container(
+                color: Colors.grey[200],
+                child: project.coverImage != null
+                    ? _buildCoverImage(project.coverImage!)
+                    : Center(
+                        child: Icon(
+                          Icons.insert_drive_file,
+                          size: 64,
+                          color: Colors.grey[400],
+                        ),
+                      ),
+              ),
+            ),
+            // Información del proyecto
+            Expanded(
+              flex: 2,
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      project.name,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${project.pages.length} página${project.pages.length != 1 ? 's' : ''}',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    const Spacer(),
+                    Text(
+                      'Actualizado: ${_formatDate(project.updatedAt)}',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Colors.grey[600],
+                          ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCoverImage(CanvasImage image) {
+    if (image.imageUrl != null) {
+      return CachedNetworkImage(
+        imageUrl: image.imageUrl!,
+        fit: BoxFit.cover,
+        placeholder: (context, url) => const Center(
+          child: CircularProgressIndicator(),
+        ),
+        errorWidget: (context, url, error) => const Icon(Icons.error),
+      );
+    } else if (image.webBytes != null) {
+      return Image.memory(
+        image.webBytes!,
+        fit: BoxFit.cover,
+      );
+    } else if (image.imagePath != null && !kIsWeb) {
+      return Image.file(
+        File(image.imagePath!),
+        fit: BoxFit.cover,
+      );
+    }
+    return Container(
+      color: Colors.grey[300],
+      child: const Icon(Icons.image, size: 48),
+    );
+  }
+
+  String _formatDate(DateTime date) {
+    final now = DateTime.now();
+    final diff = now.difference(date);
+
+    if (diff.inDays == 0) {
+      return 'Hoy ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
+    } else if (diff.inDays == 1) {
+      return 'Ayer';
+    } else if (diff.inDays < 7) {
+      return 'Hace ${diff.inDays} días';
+    } else {
+      return '${date.day}/${date.month}/${date.year}';
     }
   }
 
