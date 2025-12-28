@@ -231,18 +231,36 @@ class UserService {
         projectData['updatedAt'] =
             projectData['updatedAt'] ?? map['updated_at']?.toString();
 
-        // Si hay cover_image_url del backend, crear coverImage con esa URL
+        // Si hay cover_image_url del backend, crear coverImage con esa URL o path
         final coverImageUrl = map['cover_image_url'] as String?;
         if (coverImageUrl != null && coverImageUrl.isNotEmpty) {
-          projectData['coverImage'] = {
-            'id': 'cover',
-            'type': 'networkImage',
-            'imageUrl': coverImageUrl,
-            'position': {'dx': 0.0, 'dy': 0.0},
-            'scale': 1.0,
-          };
-          if (kDebugMode) {
-            print('=== DEBUG: Cargando coverImage desde BD: $coverImageUrl');
+          // Determinar si es un asset local o una URL de red
+          final isAsset = coverImageUrl.startsWith('assets/');
+
+          if (isAsset) {
+            // Es una etiqueta (asset local)
+            projectData['coverImage'] = {
+              'id': 'cover',
+              'type': 'localImage',
+              'imagePath': coverImageUrl,
+              'position': {'dx': 0.0, 'dy': 0.0},
+              'scale': 1.0,
+            };
+            if (kDebugMode) {
+              print('=== DEBUG: Cargando coverImage desde asset: $coverImageUrl');
+            }
+          } else {
+            // Es una URL de red (ARASAAC)
+            projectData['coverImage'] = {
+              'id': 'cover',
+              'type': 'networkImage',
+              'imageUrl': coverImageUrl,
+              'position': {'dx': 0.0, 'dy': 0.0},
+              'scale': 1.0,
+            };
+            if (kDebugMode) {
+              print('=== DEBUG: Cargando coverImage desde URL: $coverImageUrl');
+            }
           }
         }
 

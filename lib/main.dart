@@ -490,31 +490,18 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
     // Guardar los valores actuales de los controllers en las listas
     _saveControllersToCurrentPage();
 
-    // Determinar imagen de portada: buscar primera imagen con URL (ARASAAC)
+    // Determinar imagen de portada: es la etiqueta de la primera página (si existe)
     CanvasImage? coverImage;
-    if (_pages.isNotEmpty) {
-      // Buscar en todas las páginas la primera imagen con imageUrl
-      for (final page in _pages) {
-        final imageWithUrl = page.where((img) =>
-          img.imageUrl != null &&
-          img.imageUrl!.isNotEmpty &&
-          img.type != CanvasElementType.visualInstructionsBar
-        ).firstOrNull;
+    if (_pages.isNotEmpty && _pages.first.isNotEmpty) {
+      // Buscar la etiqueta en la primera página (id empieza con 'label_')
+      final labelImage = _pages.first.where((img) =>
+        img.id.startsWith('label_') && img.imagePath != null
+      ).firstOrNull;
 
-        if (imageWithUrl != null) {
-          coverImage = imageWithUrl.copyWith();
-          if (kDebugMode) {
-            print('=== DEBUG: CoverImage encontrada: ${coverImage.imageUrl}');
-          }
-          break;
-        }
-      }
-
-      // Si no hay ninguna imagen con URL, tomar la primera imagen de cualquier tipo
-      if (coverImage == null && _pages.first.isNotEmpty) {
-        coverImage = _pages.first.first.copyWith();
+      if (labelImage != null) {
+        coverImage = labelImage.copyWith();
         if (kDebugMode) {
-          print('=== DEBUG: CoverImage fallback: tipo=${coverImage.type}, url=${coverImage.imageUrl}, path=${coverImage.imagePath}');
+          print('=== DEBUG: CoverImage (etiqueta): ${coverImage.imagePath}');
         }
       }
     }
@@ -743,11 +730,29 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
         image.webBytes!,
         fit: BoxFit.cover,
       );
-    } else if (image.imagePath != null && !kIsWeb) {
-      return Image.file(
-        File(image.imagePath!),
-        fit: BoxFit.cover,
-      );
+    } else if (image.imagePath != null) {
+      // Si es un asset (etiqueta), usar Image.asset
+      if (image.imagePath!.startsWith('assets/')) {
+        return Image.asset(
+          image.imagePath!,
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) {
+            if (kDebugMode) {
+              print('Error loading asset: ${image.imagePath}');
+            }
+            return Container(
+              color: Colors.grey[300],
+              child: const Icon(Icons.broken_image, size: 48),
+            );
+          },
+        );
+      } else if (!kIsWeb) {
+        // Si no es web y no es un asset, es un archivo local
+        return Image.file(
+          File(image.imagePath!),
+          fit: BoxFit.cover,
+        );
+      }
     }
     return Container(
       color: Colors.grey[300],

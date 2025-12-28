@@ -306,12 +306,17 @@ app.post('/projects', authMiddleware, async (req, res) => {
 
     const projectId = id || uuidv4();
 
-    // Extraer URL de imagen de portada del JSON data
+    // Extraer URL o path de imagen de portada del JSON data
     let coverImageUrl = null;
     try {
       const parsedData = typeof data === 'string' ? JSON.parse(data) : data;
-      if (parsedData.coverImage && parsedData.coverImage.imageUrl) {
-        coverImageUrl = parsedData.coverImage.imageUrl;
+      if (parsedData.coverImage) {
+        // Priorizar imagePath (etiquetas) sobre imageUrl
+        if (parsedData.coverImage.imagePath) {
+          coverImageUrl = parsedData.coverImage.imagePath;
+        } else if (parsedData.coverImage.imageUrl) {
+          coverImageUrl = parsedData.coverImage.imageUrl;
+        }
       }
     } catch (e) {
       // Si falla el parsing, continuar sin imagen de portada
