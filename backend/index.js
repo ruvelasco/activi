@@ -79,6 +79,35 @@ app.post('/migrations/run', async (req, res) => {
   }
 });
 
+// Endpoint temporal para añadir columnas de instrucciones visuales
+app.post('/migrations/add-visual-instructions-columns', async (req, res) => {
+  try {
+    console.log('Añadiendo columnas de instrucciones visuales...');
+
+    // Añadir columna para URL del pictograma de actividad
+    await pool.query(`
+      ALTER TABLE activity_type
+      ADD COLUMN IF NOT EXISTS activity_pictogram_url TEXT
+    `);
+
+    // Añadir columna para URLs de pictogramas de materiales (array)
+    await pool.query(`
+      ALTER TABLE activity_type
+      ADD COLUMN IF NOT EXISTS material_pictogram_urls TEXT[]
+    `);
+
+    console.log('✓ Columnas añadidas correctamente');
+
+    return res.json({
+      message: 'Columnas de instrucciones visuales añadidas correctamente',
+      columns: ['activity_pictogram_url', 'material_pictogram_urls']
+    });
+  } catch (err) {
+    console.error('Migration error', err);
+    return res.status(500).json({ message: 'Error ejecutando migración', error: err.message });
+  }
+});
+
 // Endpoint temporal para poblar actividades por defecto
 app.post('/migrations/seed-activities', async (req, res) => {
   const { secret } = req.body || {};
