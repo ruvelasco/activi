@@ -42,11 +42,19 @@ class _ActivityTypeAdminPageState extends State<ActivityTypeAdminPage> {
     );
 
     if (newActivity != null) {
+      debugPrint('=== DEBUG ADMIN: Creando actividad: ${newActivity.name}');
+      debugPrint('=== DEBUG ADMIN: activityPictogramUrl: ${newActivity.activityPictogramUrl}');
+      debugPrint('=== DEBUG ADMIN: materialPictogramUrls: ${newActivity.materialPictogramUrls}');
+
       final created = await _service.create(newActivity);
       if (created != null) {
+        debugPrint('=== DEBUG ADMIN: Actividad creada con éxito');
+        debugPrint('=== DEBUG ADMIN: created.activityPictogramUrl: ${created.activityPictogramUrl}');
+        debugPrint('=== DEBUG ADMIN: created.materialPictogramUrls: ${created.materialPictogramUrls}');
         _showSnackBar('Actividad creada exitosamente', isError: false);
         _loadActivities();
       } else {
+        debugPrint('=== DEBUG ADMIN: Error al crear: ${_service.lastError}');
         _showSnackBar('Error: ${_service.lastError}', isError: true);
       }
     }
@@ -59,11 +67,17 @@ class _ActivityTypeAdminPageState extends State<ActivityTypeAdminPage> {
     );
 
     if (updated != null) {
+      debugPrint('=== DEBUG ADMIN: Actualizando actividad: ${updated.name}');
+      debugPrint('=== DEBUG ADMIN: activityPictogramUrl: ${updated.activityPictogramUrl}');
+      debugPrint('=== DEBUG ADMIN: materialPictogramUrls: ${updated.materialPictogramUrls}');
+
       final success = await _service.update(updated);
       if (success) {
+        debugPrint('=== DEBUG ADMIN: Actividad actualizada con éxito');
         _showSnackBar('Actividad actualizada exitosamente', isError: false);
         _loadActivities();
       } else {
+        debugPrint('=== DEBUG ADMIN: Error al actualizar: ${_service.lastError}');
         _showSnackBar('Error: ${_service.lastError}', isError: true);
       }
     }

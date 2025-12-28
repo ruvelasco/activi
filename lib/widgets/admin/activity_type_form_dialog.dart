@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../../models/activity_type.dart';
+import '../../services/arasaac_service.dart';
 
 class ActivityTypeFormDialog extends StatefulWidget {
   final ActivityType? activity;
@@ -22,6 +24,10 @@ class _ActivityTypeFormDialogState extends State<ActivityTypeFormDialog> {
   late bool _isNew;
   late bool _isHighlighted;
   late bool _isEnabled;
+  String? _activityPictogramUrl;
+  List<String> _materialPictogramUrls = [];
+
+  final _arasaacService = ArasaacService();
 
   final List<Map<String, dynamic>> _availableIcons = [
     {'name': 'auto_awesome', 'icon': Icons.auto_awesome},
@@ -76,6 +82,10 @@ class _ActivityTypeFormDialogState extends State<ActivityTypeFormDialog> {
     _isNew = activity?.isNew ?? false;
     _isHighlighted = activity?.isHighlighted ?? false;
     _isEnabled = activity?.isEnabled ?? true;
+    _activityPictogramUrl = activity?.activityPictogramUrl;
+    _materialPictogramUrls = activity?.materialPictogramUrls != null
+        ? List.from(activity!.materialPictogramUrls!)
+        : [];
   }
 
   @override
@@ -103,12 +113,198 @@ class _ActivityTypeFormDialogState extends State<ActivityTypeFormDialog> {
         isHighlighted: _isHighlighted,
         isEnabled: _isEnabled,
         category: _categoryController.text.trim().isEmpty ? null : _categoryController.text.trim(),
+        activityPictogramUrl: _activityPictogramUrl,
+        materialPictogramUrls: _materialPictogramUrls.isEmpty ? null : _materialPictogramUrls,
         createdAt: widget.activity?.createdAt,
         updatedAt: DateTime.now(),
       );
 
       Navigator.pop(context, activity);
     }
+  }
+
+  Future<void> _searchActivityPictogram() async {
+    final controller = TextEditingController();
+    List<ArasaacImage> searchResults = [];
+    bool isSearching = false;
+
+    await showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Buscar pictograma de actividad'),
+          content: SizedBox(
+            width: 500,
+            height: 400,
+            child: Column(
+              children: [
+                TextField(
+                  controller: controller,
+                  decoration: const InputDecoration(
+                    labelText: 'Buscar (ej: puzzle, sumar, leer)',
+                    border: OutlineInputBorder(),
+                    suffixIcon: Icon(Icons.search),
+                  ),
+                  onSubmitted: (value) async {
+                    if (value.trim().isEmpty) return;
+                    setDialogState(() => isSearching = true);
+                    try {
+                      final results = await _arasaacService.searchPictograms(value.trim());
+                      setDialogState(() {
+                        searchResults = results;
+                        isSearching = false;
+                      });
+                    } catch (e) {
+                      setDialogState(() => isSearching = false);
+                    }
+                  },
+                ),
+                const SizedBox(height: 16),
+                Expanded(
+                  child: isSearching
+                      ? const Center(child: CircularProgressIndicator())
+                      : searchResults.isEmpty
+                          ? const Center(child: Text('Busca un pictograma para empezar'))
+                          : GridView.builder(
+                              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 4,
+                                crossAxisSpacing: 8,
+                                mainAxisSpacing: 8,
+                              ),
+                              itemCount: searchResults.length,
+                              itemBuilder: (context, index) {
+                                final image = searchResults[index];
+                                return InkWell(
+                                  onTap: () {
+                                    setState(() {
+                                      _activityPictogramUrl = image.imageUrl;
+                                    });
+                                    Navigator.of(context).pop();
+                                  },
+                                  child: Column(
+                                    children: [
+                                      Expanded(
+                                        child: CachedNetworkImage(
+                                          imageUrl: image.imageUrl,
+                                          fit: BoxFit.contain,
+                                        ),
+                                      ),
+                                      Text(
+                                        image.keywords.isNotEmpty ? image.keywords.first : '',
+                                        style: const TextStyle(fontSize: 10),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancelar'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _searchMaterialPictogram() async {
+    final controller = TextEditingController();
+    List<ArasaacImage> searchResults = [];
+    bool isSearching = false;
+
+    await showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Buscar material'),
+          content: SizedBox(
+            width: 500,
+            height: 400,
+            child: Column(
+              children: [
+                TextField(
+                  controller: controller,
+                  decoration: const InputDecoration(
+                    labelText: 'Buscar (ej: lápiz, goma, tijeras)',
+                    border: OutlineInputBorder(),
+                    suffixIcon: Icon(Icons.search),
+                  ),
+                  onSubmitted: (value) async {
+                    if (value.trim().isEmpty) return;
+                    setDialogState(() => isSearching = true);
+                    try {
+                      final results = await _arasaacService.searchPictograms(value.trim());
+                      setDialogState(() {
+                        searchResults = results;
+                        isSearching = false;
+                      });
+                    } catch (e) {
+                      setDialogState(() => isSearching = false);
+                    }
+                  },
+                ),
+                const SizedBox(height: 16),
+                Expanded(
+                  child: isSearching
+                      ? const Center(child: CircularProgressIndicator())
+                      : searchResults.isEmpty
+                          ? const Center(child: Text('Busca un material para empezar'))
+                          : GridView.builder(
+                              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 4,
+                                crossAxisSpacing: 8,
+                                mainAxisSpacing: 8,
+                              ),
+                              itemCount: searchResults.length,
+                              itemBuilder: (context, index) {
+                                final image = searchResults[index];
+                                return InkWell(
+                                  onTap: () {
+                                    setState(() {
+                                      _materialPictogramUrls.add(image.imageUrl);
+                                    });
+                                    Navigator.of(context).pop();
+                                  },
+                                  child: Column(
+                                    children: [
+                                      Expanded(
+                                        child: CachedNetworkImage(
+                                          imageUrl: image.imageUrl,
+                                          fit: BoxFit.contain,
+                                        ),
+                                      ),
+                                      Text(
+                                        image.keywords.isNotEmpty ? image.keywords.first : '',
+                                        style: const TextStyle(fontSize: 10),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancelar'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -340,6 +536,116 @@ class _ActivityTypeFormDialogState extends State<ActivityTypeFormDialog> {
                             _isEnabled = value ?? true;
                           });
                         },
+                      ),
+                      const SizedBox(height: 24),
+
+                      // Instrucciones visuales
+                      const Text(
+                        'Instrucciones Visuales',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Pictogramas que se añadirán automáticamente cuando se genere esta actividad',
+                        style: TextStyle(fontSize: 12, color: Colors.black54),
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Pictograma de actividad
+                      const Text(
+                        'Pictograma de actividad',
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                      ),
+                      const SizedBox(height: 8),
+                      if (_activityPictogramUrl != null)
+                        Stack(
+                          children: [
+                            Container(
+                              width: 80,
+                              height: 80,
+                              decoration: BoxDecoration(
+                                border: Border.all(color: Colors.blue, width: 2),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: CachedNetworkImage(
+                                imageUrl: _activityPictogramUrl!,
+                                fit: BoxFit.contain,
+                              ),
+                            ),
+                            Positioned(
+                              right: 0,
+                              top: 0,
+                              child: IconButton(
+                                icon: const Icon(Icons.close, size: 20, color: Colors.red),
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(),
+                                onPressed: () {
+                                  setState(() {
+                                    _activityPictogramUrl = null;
+                                  });
+                                },
+                              ),
+                            ),
+                          ],
+                        )
+                      else
+                        ElevatedButton.icon(
+                          onPressed: () => _searchActivityPictogram(),
+                          icon: const Icon(Icons.search),
+                          label: const Text('Buscar pictograma de actividad'),
+                        ),
+                      const SizedBox(height: 16),
+
+                      // Pictogramas de materiales
+                      const Text(
+                        'Pictogramas de materiales',
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                      ),
+                      const SizedBox(height: 8),
+                      if (_materialPictogramUrls.isNotEmpty)
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: _materialPictogramUrls.asMap().entries.map((entry) {
+                            final idx = entry.key;
+                            final url = entry.value;
+                            return Stack(
+                              children: [
+                                Container(
+                                  width: 60,
+                                  height: 60,
+                                  decoration: BoxDecoration(
+                                    border: Border.all(color: Colors.grey),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: CachedNetworkImage(
+                                    imageUrl: url,
+                                    fit: BoxFit.contain,
+                                  ),
+                                ),
+                                Positioned(
+                                  right: 0,
+                                  top: 0,
+                                  child: IconButton(
+                                    icon: const Icon(Icons.close, size: 16, color: Colors.red),
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(),
+                                    onPressed: () {
+                                      setState(() {
+                                        _materialPictogramUrls.removeAt(idx);
+                                      });
+                                    },
+                                  ),
+                                ),
+                              ],
+                            );
+                          }).toList(),
+                        ),
+                      const SizedBox(height: 8),
+                      ElevatedButton.icon(
+                        onPressed: () => _searchMaterialPictogram(),
+                        icon: const Icon(Icons.add),
+                        label: const Text('Añadir material'),
                       ),
                     ],
                   ),

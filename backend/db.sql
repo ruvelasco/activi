@@ -34,6 +34,8 @@ CREATE TABLE IF NOT EXISTS activity_type (
   is_highlighted BOOLEAN NOT NULL DEFAULT false,
   is_enabled BOOLEAN NOT NULL DEFAULT true,
   category TEXT,
+  activity_pictogram_url TEXT,
+  material_pictogram_urls TEXT[],
   created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );

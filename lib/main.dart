@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 import 'package:arasaac_activities/widgets/template_painter.dart';
@@ -10,12 +11,15 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'services/arasaac_service.dart';
 import 'services/soy_visual_service.dart';
+import 'services/activity_type_service.dart';
 import 'models/canvas_image.dart';
 import 'models/soy_visual.dart';
 import 'models/project_data.dart';
 import 'models/user_account.dart';
+import 'models/activity_type.dart';
 import 'services/user_service.dart';
 import 'widgets/template_menu.dart';
 import 'widgets/dynamic_activity_creator_panel.dart';
@@ -62,9 +66,7 @@ class MyApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF6A1B9A)),
         useMaterial3: true,
       ),
-      home: const SplashScreen(
-        child: ActivityCreatorPage(),
-      ),
+      home: const SplashScreen(child: ActivityCreatorPage()),
     );
   }
 }
@@ -85,9 +87,10 @@ enum SidebarMode {
   templates,
   config,
   creador,
+  visualInstructions,
 }
 
-enum ConfigTab { background, pagination, headerFooter, arasaac }
+enum ConfigTab { page, arasaac }
 
 class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
   // A4 en puntos (pts) para PDF: 1 punto = 1/72 pulgadas
@@ -97,7 +100,9 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
   late ArasaacService _arasaacService;
   final SoyVisualService _soyVisualService = SoyVisualService();
   final UserService _userService = UserService();
+  final ActivityTypeService _activityTypeService = ActivityTypeService();
   UserAccount? _currentUser;
+  Map<String, ActivityType> _activityTypes = {}; // Mapa de nombre -> ActivityType
   String? _activeProjectId;
   String _projectName = ''; // Nombre del proyecto actual
   bool _isPersisting = false;
@@ -112,13 +117,16 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _soyVisualSearchController =
       TextEditingController();
-  final TextEditingController _headerController = TextEditingController();
-  final TextEditingController _footerController = TextEditingController();
+  final TextEditingController _headerController = TextEditingController(); // Título de la página actual
+  final TextEditingController _footerController = TextEditingController(); // Instrucciones de la página actual
+  final TextEditingController _documentFooterController = TextEditingController(); // Pie de página del documento (autor, licencia, etc)
   List<ArasaacImage> _searchResults = [];
   List<SoyVisualElement> _soyVisualResults = [];
   List<List<CanvasImage>> _pages = [
     [],
   ]; // Lista de páginas, cada página tiene sus imágenes
+  List<String> _pageTitles = ['']; // Título de cada página
+  List<String> _pageInstructions = ['']; // Instrucciones de cada página
   List<TemplateType> _pageTemplates = [
     TemplateType.blank,
   ]; // Plantilla de cada página
@@ -132,7 +140,7 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
   String _lastSoyVisualQuery = '';
   SoyVisualCategory _lastSoyVisualCategory = SoyVisualCategory.photos;
   SoyVisualCategory _soyVisualCategory = SoyVisualCategory.photos;
-  ConfigTab _configTab = ConfigTab.background;
+  ConfigTab _configTab = ConfigTab.page;
   HeaderFooterScope _headerScope = HeaderFooterScope.all;
   HeaderFooterScope _footerScope = HeaderFooterScope.all;
   bool _showPageNumbers = false;
@@ -145,7 +153,7 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
   bool _showSoyVisualCredit = false;
   double _canvasZoom = 1.0;
   Size _canvasSize = Size.zero;
-  double _viewScale = 1.0; // factor pantalla->lienzo
+  final TransformationController _transformationController = TransformationController();
   Offset _editBarPosition = const Offset(
     20,
     20,
@@ -155,13 +163,43 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
   final List<List<List<CanvasImage>>> _history = [[]]; // Historial de estados
   int _historyIndex = 0; // Índice actual en el historial
 
+  Future<void> _loadUserLogoPreference() async {
+    if (_currentUser == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    final path = prefs.getString('user_logo_${_currentUser!.id}_path');
+    final web = prefs.getString('user_logo_${_currentUser!.id}_web');
+    setState(() {
+      _logoPath = (path != null && path.isNotEmpty) ? path : null;
+      _logoWebBytes = web != null ? base64Decode(web) : null;
+    });
+  }
+
+  Future<void> _saveUserLogoPreference() async {
+    if (_currentUser == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    final keyPath = 'user_logo_${_currentUser!.id}_path';
+    final keyWeb = 'user_logo_${_currentUser!.id}_web';
+    if (_logoPath != null && _logoPath!.isNotEmpty) {
+      await prefs.setString(keyPath, _logoPath!);
+    } else {
+      await prefs.remove(keyPath);
+    }
+    if (_logoWebBytes != null && _logoWebBytes!.isNotEmpty) {
+      await prefs.setString(keyWeb, base64Encode(_logoWebBytes!));
+    } else {
+      await prefs.remove(keyWeb);
+    }
+  }
+
   List<CanvasImage> get _canvasImages {
     // Validar que _currentPage esté dentro del rango
     if (_currentPage >= 0 && _currentPage < _pages.length) {
       return _pages[_currentPage];
     }
     // Si está fuera de rango, retornar lista vacía
-    print('ADVERTENCIA: _currentPage ($_currentPage) fuera de rango. Total páginas: ${_pages.length}');
+    print(
+      'ADVERTENCIA: _currentPage ($_currentPage) fuera de rango. Total páginas: ${_pages.length}',
+    );
     return [];
   }
 
@@ -171,7 +209,9 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
       return _pageTemplates[_currentPage];
     }
     // Si está fuera de rango, retornar blank
-    print('ADVERTENCIA: _currentPage ($_currentPage) fuera de rango para templates. Total: ${_pageTemplates.length}');
+    print(
+      'ADVERTENCIA: _currentPage ($_currentPage) fuera de rango para templates. Total: ${_pageTemplates.length}',
+    );
     return TemplateType.blank;
   }
 
@@ -201,6 +241,66 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
   void initState() {
     super.initState();
     _arasaacService = ArasaacService(config: _arasaacConfig);
+    _loadActivityTypes();
+
+    // Añadir listeners para guardar automáticamente cuando se editen título/instrucciones
+    _headerController.addListener(() {
+      if (_pageTitles.length > _currentPage) {
+        _pageTitles[_currentPage] = _headerController.text;
+      }
+    });
+    _footerController.addListener(() {
+      if (_pageInstructions.length > _currentPage) {
+        _pageInstructions[_currentPage] = _footerController.text;
+      }
+    });
+  }
+
+  Future<void> _loadActivityTypes() async {
+    try {
+      final activities = await _activityTypeService.getAll();
+      setState(() {
+        _activityTypes = {
+          for (var activity in activities) activity.name: activity,
+        };
+      });
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error al cargar tipos de actividades: $e');
+      }
+      // Continuar sin activity types del backend (usará valores por defecto)
+    }
+  }
+
+  /// Aplica título e instrucciones desde ActivityType si existe, sino usa los del result
+  void _applyTitleAndInstructions(String activityName, {required String defaultTitle, required String defaultInstructions}) {
+    final activityType = _activityTypes[activityName];
+    String title, instructions;
+    if (activityType != null && activityType.title.isNotEmpty) {
+      title = activityType.title;
+      instructions = activityType.description;
+    } else {
+      title = defaultTitle;
+      instructions = defaultInstructions;
+    }
+
+    // Aplicar a la página actual
+    _pageTitles[_currentPage] = title;
+    _pageInstructions[_currentPage] = instructions;
+    _headerController.text = title;
+    _footerController.text = instructions;
+  }
+
+  /// Sincroniza los controllers con la página actual
+  void _syncControllersWithCurrentPage() {
+    _headerController.text = _pageTitles[_currentPage];
+    _footerController.text = _pageInstructions[_currentPage];
+  }
+
+  /// Guarda los valores de los controllers en la página actual
+  void _saveControllersToCurrentPage() {
+    _pageTitles[_currentPage] = _headerController.text;
+    _pageInstructions[_currentPage] = _footerController.text;
   }
 
   void _updateArasaacConfig(ArasaacConfig newConfig) {
@@ -230,6 +330,7 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
               _currentUser = user;
               _activeProjectId = null;
             });
+            await _loadUserLogoPreference();
             return true;
           }
           return false;
@@ -241,6 +342,7 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
               _currentUser = user;
               _activeProjectId = null;
             });
+            await _loadUserLogoPreference();
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
@@ -284,9 +386,9 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
     });
     _saveToHistory();
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Nuevo proyecto creado')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Nuevo proyecto creado')));
     }
   }
 
@@ -382,6 +484,9 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
   }
 
   ProjectData _buildProjectData(String name) {
+    // Guardar los valores actuales de los controllers en las listas
+    _saveControllersToCurrentPage();
+
     return ProjectData(
       id: _activeProjectId ?? _generateId(),
       name: name,
@@ -392,8 +497,13 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
       templates: List<TemplateType>.from(_pageTemplates),
       backgrounds: List<Color>.from(_pageBackgrounds),
       orientations: List<bool>.from(_pageOrientations),
-      headerText: _headerController.text,
-      footerText: _footerController.text,
+      pageTitles: List<String>.from(_pageTitles),
+      pageInstructions: List<String>.from(_pageInstructions),
+      documentFooter: _documentFooterController.text.trim().isEmpty
+          ? null
+          : _documentFooterController.text,
+      headerText: null, // Ya no se usa
+      footerText: null, // Ya no se usa
       headerScope: _headerScope,
       footerScope: _footerScope,
       showPageNumbers: _showPageNumbers,
@@ -416,7 +526,9 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
     final project = _buildProjectData(name);
     print('DEBUG: Proyecto construido con ID: ${project.id}');
     final saved = await _userService.saveProject(project);
-    print('DEBUG: Resultado de saveProject: ${saved != null ? "SUCCESS" : "FAILED"}');
+    print(
+      'DEBUG: Resultado de saveProject: ${saved != null ? "SUCCESS" : "FAILED"}',
+    );
     setState(() {
       _activeProjectId = saved?.id;
       _projectName = name; // Guardar nombre del proyecto
@@ -491,6 +603,248 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
     }
   }
 
+  Future<void> _showEditVisualInstructionsDialog(String barId) async {
+    final index = _canvasImages.indexWhere((img) => img.id == barId);
+    if (index == -1) return;
+
+    final currentBar = _canvasImages[index];
+    String? tempActivityUrl = currentBar.activityPictogramUrl;
+    List<String> tempMaterialUrls = List.from(currentBar.materialPictogramUrls ?? []);
+
+    final activitySearchController = TextEditingController();
+    final materialSearchController = TextEditingController();
+    List<ArasaacImage> activitySearchResults = [];
+    List<ArasaacImage> materialSearchResults = [];
+
+    await showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Editar instrucciones visuales'),
+              content: SizedBox(
+                width: 500,
+                height: 600,
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Pictograma de actividad',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                      ),
+                      const SizedBox(height: 8),
+                      if (tempActivityUrl != null)
+                        Stack(
+                          children: [
+                            Container(
+                              width: 80,
+                              height: 80,
+                              decoration: BoxDecoration(
+                                border: Border.all(color: Colors.blue, width: 2),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: CachedNetworkImage(
+                                imageUrl: tempActivityUrl!,
+                                fit: BoxFit.contain,
+                              ),
+                            ),
+                            Positioned(
+                              right: 0,
+                              top: 0,
+                              child: IconButton(
+                                icon: const Icon(Icons.close, size: 20),
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(),
+                                onPressed: () {
+                                  setDialogState(() {
+                                    tempActivityUrl = null;
+                                  });
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: activitySearchController,
+                        decoration: const InputDecoration(
+                          hintText: 'Buscar actividad (ej: sumar, leer, escribir)',
+                          border: OutlineInputBorder(),
+                        ),
+                        onSubmitted: (query) async {
+                          if (query.trim().isEmpty) return;
+                          final results = await _arasaacService.searchPictograms(query);
+                          setDialogState(() {
+                            activitySearchResults = results;
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                      if (activitySearchResults.isNotEmpty)
+                        SizedBox(
+                          height: 150,
+                          child: GridView.builder(
+                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 4,
+                              crossAxisSpacing: 8,
+                              mainAxisSpacing: 8,
+                            ),
+                            itemCount: activitySearchResults.length,
+                            itemBuilder: (context, index) {
+                              final pictogram = activitySearchResults[index];
+                              final url = 'https://api.arasaac.org/api/pictograms/${pictogram.id}?download=false';
+                              return GestureDetector(
+                                onTap: () {
+                                  setDialogState(() {
+                                    tempActivityUrl = url;
+                                    activitySearchResults = [];
+                                    activitySearchController.clear();
+                                  });
+                                },
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    border: Border.all(color: Colors.grey),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: CachedNetworkImage(
+                                    imageUrl: url,
+                                    fit: BoxFit.contain,
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      const SizedBox(height: 16),
+                      const Divider(),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Pictogramas de materiales',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                      ),
+                      const SizedBox(height: 8),
+                      if (tempMaterialUrls.isNotEmpty)
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: tempMaterialUrls.asMap().entries.map((entry) {
+                            final idx = entry.key;
+                            final url = entry.value;
+                            return Stack(
+                              children: [
+                                Container(
+                                  width: 60,
+                                  height: 60,
+                                  decoration: BoxDecoration(
+                                    border: Border.all(color: Colors.grey),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: CachedNetworkImage(
+                                    imageUrl: url,
+                                    fit: BoxFit.contain,
+                                  ),
+                                ),
+                                Positioned(
+                                  right: 0,
+                                  top: 0,
+                                  child: IconButton(
+                                    icon: const Icon(Icons.close, size: 16),
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(),
+                                    onPressed: () {
+                                      setDialogState(() {
+                                        tempMaterialUrls.removeAt(idx);
+                                      });
+                                    },
+                                  ),
+                                ),
+                              ],
+                            );
+                          }).toList(),
+                        ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: materialSearchController,
+                        decoration: const InputDecoration(
+                          hintText: 'Buscar material (ej: lápiz, tijeras, goma)',
+                          border: OutlineInputBorder(),
+                        ),
+                        onSubmitted: (query) async {
+                          if (query.trim().isEmpty) return;
+                          final results = await _arasaacService.searchPictograms(query);
+                          setDialogState(() {
+                            materialSearchResults = results;
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                      if (materialSearchResults.isNotEmpty)
+                        SizedBox(
+                          height: 150,
+                          child: GridView.builder(
+                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 4,
+                              crossAxisSpacing: 8,
+                              mainAxisSpacing: 8,
+                            ),
+                            itemCount: materialSearchResults.length,
+                            itemBuilder: (context, index) {
+                              final pictogram = materialSearchResults[index];
+                              final url = 'https://api.arasaac.org/api/pictograms/${pictogram.id}?download=false';
+                              return GestureDetector(
+                                onTap: () {
+                                  setDialogState(() {
+                                    tempMaterialUrls.add(url);
+                                    materialSearchResults = [];
+                                    materialSearchController.clear();
+                                  });
+                                },
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    border: Border.all(color: Colors.grey),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: CachedNetworkImage(
+                                    imageUrl: url,
+                                    fit: BoxFit.contain,
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Cancelar'),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    setState(() {
+                      _canvasImages[index] = currentBar.copyWith(
+                        activityPictogramUrl: tempActivityUrl,
+                        materialPictogramUrls: tempMaterialUrls,
+                      );
+                      _saveToHistory();
+                    });
+                    Navigator.of(context).pop();
+                  },
+                  child: const Text('Guardar'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   Future<void> _loadProject(ProjectData project) async {
     final pageCount = project.pages.length;
     final templates = List<TemplateType>.generate(
@@ -511,6 +865,18 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
           ? project.orientations[index]
           : false,
     );
+    final pageTitles = List<String>.generate(
+      pageCount,
+      (index) => index < project.pageTitles.length
+          ? project.pageTitles[index]
+          : '',
+    );
+    final pageInstructions = List<String>.generate(
+      pageCount,
+      (index) => index < project.pageInstructions.length
+          ? project.pageInstructions[index]
+          : '',
+    );
 
     setState(() {
       _pages = project.pages
@@ -519,8 +885,9 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
       _pageTemplates = templates;
       _pageBackgrounds = backgrounds;
       _pageOrientations = orientations;
-      _headerController.text = project.headerText ?? '';
-      _footerController.text = project.footerText ?? '';
+      _pageTitles = pageTitles;
+      _pageInstructions = pageInstructions;
+      _documentFooterController.text = project.documentFooter ?? '';
       _headerScope = project.headerScope;
       _footerScope = project.footerScope;
       _showPageNumbers = project.showPageNumbers;
@@ -535,7 +902,11 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
       _historyIndex = 0;
       _activeProjectId = project.id;
       _projectName = project.name; // Guardar nombre del proyecto
+
+      // Sincronizar los controllers con la primera página
+      _syncControllersWithCurrentPage();
     });
+    await _saveUserLogoPreference();
     _saveToHistory();
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -791,11 +1162,17 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
           _pageTemplates[pageIndex] = TemplateType.blank;
           _pageOrientations[pageIndex] = _pageOrientations[_currentPage];
         }
+        // Aplicar título e instrucciones desde backend o valores por defecto
+        _applyTitleAndInstructions(
+          'shadow_matching',
+          defaultTitle: result.title,
+          defaultInstructions: result.instructions,
+        );
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(result.message)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(result.message)));
     });
   }
 
@@ -880,20 +1257,26 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
           _pageTemplates[pageIndex] = TemplateType.blank;
           _pageOrientations[pageIndex] = _pageOrientations[_currentPage];
         }
+        // ActivityPack: cada página tiene su propio título e instrucciones
+        // Por ahora, usar el título de la primera página
+        if (result.pagesWithMetadata.isNotEmpty) {
+          _headerController.text = result.pagesWithMetadata.first.title;
+          _footerController.text = result.pagesWithMetadata.first.instructions;
+        }
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(result.message)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(result.message)));
     } catch (e) {
       if (!mounted) return;
 
       // Cerrar diálogo de progreso en caso de error
       ActivityPackProgressDialog.dismiss(context);
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al generar el pack: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error al generar el pack: $e')));
     }
   }
 
@@ -910,7 +1293,9 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
 
     if (images.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Añade al menos una imagen en esta página primero')),
+        const SnackBar(
+          content: Text('Añade al menos una imagen en esta página primero'),
+        ),
       );
       return;
     }
@@ -978,6 +1363,13 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
       // Página siguiente: Piezas recortables
       _pages[nextPage].clear();
       _pages[nextPage].addAll(result.piecesPage);
+
+      // Aplicar título e instrucciones desde backend o valores por defecto
+      _applyTitleAndInstructions(
+        'puzzle',
+        defaultTitle: result.title,
+        defaultInstructions: result.instructions,
+      );
     });
 
     if (context.mounted) {
@@ -1033,7 +1425,8 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
                             (n) => ChoiceChip(
                               label: Text('$n'),
                               selected: selectedItems == n,
-                              onSelected: (_) => setState(() => selectedItems = n),
+                              onSelected: (_) =>
+                                  setState(() => selectedItems = n),
                             ),
                           )
                           .toList(),
@@ -1044,7 +1437,9 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
                       onChanged: (v) => setState(() => showModel = v ?? false),
                       dense: true,
                       contentPadding: EdgeInsets.zero,
-                      title: const Text('Mostrar modelo de palabra (si la hay)'),
+                      title: const Text(
+                        'Mostrar modelo de palabra (si la hay)',
+                      ),
                     ),
                     const SizedBox(height: 12),
                     const Text('Tipo de letra'),
@@ -1054,27 +1449,45 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
                       items: const [
                         DropdownMenuItem(
                           value: 'ColeCarreira',
-                          child: Text('Cole Carreira', style: TextStyle(fontFamily: 'ColeCarreira')),
+                          child: Text(
+                            'Cole Carreira',
+                            style: TextStyle(fontFamily: 'ColeCarreira'),
+                          ),
                         ),
                         DropdownMenuItem(
                           value: 'EscolarG',
-                          child: Text('Escolar G', style: TextStyle(fontFamily: 'EscolarG')),
+                          child: Text(
+                            'Escolar G',
+                            style: TextStyle(fontFamily: 'EscolarG'),
+                          ),
                         ),
                         DropdownMenuItem(
                           value: 'EscolarP',
-                          child: Text('Escolar P', style: TextStyle(fontFamily: 'EscolarP')),
+                          child: Text(
+                            'Escolar P',
+                            style: TextStyle(fontFamily: 'EscolarP'),
+                          ),
                         ),
                         DropdownMenuItem(
                           value: 'Trace',
-                          child: Text('Trace', style: TextStyle(fontFamily: 'Trace')),
+                          child: Text(
+                            'Trace',
+                            style: TextStyle(fontFamily: 'Trace'),
+                          ),
                         ),
                         DropdownMenuItem(
                           value: 'Massallera',
-                          child: Text('Massallera', style: TextStyle(fontFamily: 'Massallera')),
+                          child: Text(
+                            'Massallera',
+                            style: TextStyle(fontFamily: 'Massallera'),
+                          ),
                         ),
                         DropdownMenuItem(
                           value: 'Roboto',
-                          child: Text('Roboto (Normal)', style: TextStyle(fontFamily: 'Roboto')),
+                          child: Text(
+                            'Roboto (Normal)',
+                            style: TextStyle(fontFamily: 'Roboto'),
+                          ),
                         ),
                       ],
                       onChanged: (v) {
@@ -1157,6 +1570,12 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
         _pageTemplates[pageIndex] = TemplateType.writingPractice;
         _pageOrientations[pageIndex] = _pageOrientations[_currentPage];
       }
+      // Aplicar título e instrucciones desde backend o valores por defecto
+      _applyTitleAndInstructions(
+        'writing_practice',
+        defaultTitle: result.title,
+        defaultInstructions: result.instructions,
+      );
     });
 
     ScaffoldMessenger.of(context).showSnackBar(
@@ -1204,7 +1623,8 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
                           (n) => ChoiceChip(
                             label: Text('$n'),
                             selected: selectedBoxes == n,
-                            onSelected: (_) => setState(() => selectedBoxes = n),
+                            onSelected: (_) =>
+                                setState(() => selectedBoxes = n),
                           ),
                         )
                         .toList(),
@@ -1279,6 +1699,12 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
           _pageTemplates[pageIndex] = TemplateType.countingPractice;
           _pageOrientations[pageIndex] = _pageOrientations[_currentPage];
         }
+      // Aplicar título e instrucciones desde backend o valores por defecto
+      _applyTitleAndInstructions(
+        'counting_practice',
+        defaultTitle: result.title,
+        defaultInstructions: result.instructions,
+      );
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1357,12 +1783,18 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
         _pages[pageIndex].clear();
         _pages[pageIndex].addAll(result.pages[i]);
       }
+      // Aplicar título e instrucciones desde backend o valores por defecto
+      _applyTitleAndInstructions(
+        'phonological_awareness',
+        defaultTitle: result.title,
+        defaultInstructions: result.instructions,
+      );
     });
 
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(result.message)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(result.message)));
     }
   }
 
@@ -1425,12 +1857,18 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
         _pages[pageIndex].clear();
         _pages[pageIndex].addAll(result.pages[i]);
       }
+      // Aplicar título e instrucciones desde backend o valores por defecto
+      _applyTitleAndInstructions(
+        'phonological_board',
+        defaultTitle: result.title,
+        defaultInstructions: result.instructions,
+      );
     });
 
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(result.message)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(result.message)));
     }
   }
 
@@ -1475,11 +1913,17 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
         _pageTemplates[pageIndex] = TemplateType.blank;
         _pageOrientations[pageIndex] = _pageOrientations[_currentPage];
       }
+      // Aplicar título e instrucciones desde backend o valores por defecto
+      _applyTitleAndInstructions(
+        'series',
+        defaultTitle: result.title,
+        defaultInstructions: result.instructions,
+      );
     });
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(result.message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(result.message)));
   }
 
   Future<void> _generatePhrasesActivity() async {
@@ -1559,6 +2003,12 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
       setState(() {
         _pages[_currentPage].clear();
         _pages[_currentPage].addAll(result.elements);
+      // Aplicar título e instrucciones desde backend o valores por defecto
+      _applyTitleAndInstructions(
+        'phrases',
+        defaultTitle: result.title,
+        defaultInstructions: result.instructions,
+      );
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1618,7 +2068,9 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
                       dense: true,
                     ),
                     RadioListTile<card_activity.CardLayout>(
-                      title: const Text('Imagen a la izquierda, texto a la derecha'),
+                      title: const Text(
+                        'Imagen a la izquierda, texto a la derecha',
+                      ),
                       value: card_activity.CardLayout.imageLeft,
                       groupValue: layout,
                       onChanged: (v) {
@@ -1627,7 +2079,9 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
                       dense: true,
                     ),
                     RadioListTile<card_activity.CardLayout>(
-                      title: const Text('Imagen a la derecha, texto a la izquierda'),
+                      title: const Text(
+                        'Imagen a la derecha, texto a la izquierda',
+                      ),
                       value: card_activity.CardLayout.imageRight,
                       groupValue: layout,
                       onChanged: (v) {
@@ -1653,9 +2107,8 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
                   child: const Text('Cancelar'),
                 ),
                 ElevatedButton(
-                  onPressed: () => Navigator.of(context).pop({
-                    'layout': layout,
-                  }),
+                  onPressed: () =>
+                      Navigator.of(context).pop({'layout': layout}),
                   child: const Text('Generar'),
                 ),
               ],
@@ -1697,11 +2150,17 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
         _pageTemplates[pageIndex] = TemplateType.blank;
         _pageOrientations[pageIndex] = _pageOrientations[_currentPage];
       }
+      // Aplicar título e instrucciones desde backend o valores por defecto
+      _applyTitleAndInstructions(
+        'card',
+        defaultTitle: result.title,
+        defaultInstructions: result.instructions,
+      );
     });
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(result.message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(result.message)));
   }
 
   void _generateSymmetryActivity() {
@@ -1745,13 +2204,17 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
         _pageTemplates[pageIndex] = TemplateType.blank;
         _pageOrientations[pageIndex] = _pageOrientations[_currentPage];
       }
+      // Aplicar título e instrucciones desde backend o valores por defecto
+      _applyTitleAndInstructions(
+        'symmetry',
+        defaultTitle: result.title,
+        defaultInstructions: result.instructions,
+      );
     });
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(result.message),
-      ),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(result.message)));
   }
 
   Future<void> _generateClassificationActivity() async {
@@ -1766,7 +2229,8 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
     if (images.length < 2) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-            content: Text('Añade al menos 2 imágenes ARASAAC primero')),
+          content: Text('Añade al menos 2 imágenes ARASAAC primero'),
+        ),
       );
       return;
     }
@@ -1795,15 +2259,14 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
           print('DEBUG: ID extraído: $pictogramId');
 
           // Buscar imágenes relacionadas (10 por cada categoría)
-          final results =
-              await _arasaacService.searchRelatedPictograms(int.parse(pictogramId));
+          final results = await _arasaacService.searchRelatedPictograms(
+            int.parse(pictogramId),
+          );
 
           print('DEBUG: Imágenes relacionadas encontradas: ${results.length}');
 
           // Tomar las primeras 10 URLs de cada categoría
-          relatedUrls.addAll(
-            results.take(10).map((p) => p.imageUrl),
-          );
+          relatedUrls.addAll(results.take(10).map((p) => p.imageUrl));
         } else {
           print('DEBUG: No se pudo extraer ID de la URL');
         }
@@ -1812,7 +2275,10 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
       if (relatedUrls.length < 20) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-              content: Text('No se encontraron suficientes imágenes relacionadas (${relatedUrls.length}/20)')),
+            content: Text(
+              'No se encontraron suficientes imágenes relacionadas (${relatedUrls.length}/20)',
+            ),
+          ),
         );
         return;
       }
@@ -1825,7 +2291,9 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
         a4HeightPts: _a4HeightPts,
       );
 
-      print('DEBUG: Elementos en categoriesPage: ${result.categoriesPage.length}');
+      print(
+        'DEBUG: Elementos en categoriesPage: ${result.categoriesPage.length}',
+      );
       print('DEBUG: Elementos en objectsPage: ${result.objectsPage.length}');
 
       print('DEBUG ANTES DE SETSTATE: _pages.length = ${_pages.length}');
@@ -1873,15 +2341,19 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
         ),
       );
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al generar actividad: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error al generar actividad: $e')));
     }
   }
 
   Future<void> _generatePhonologicalSquaresActivity() async {
     final images = _canvasImages
-        .where((element) => element.type == CanvasElementType.networkImage || element.type == CanvasElementType.pictogramCard)
+        .where(
+          (element) =>
+              element.type == CanvasElementType.networkImage ||
+              element.type == CanvasElementType.pictogramCard,
+        )
         .toList();
 
     if (images.isEmpty) {
@@ -1892,32 +2364,44 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
     }
 
     try {
-      final result =
-          await phonological_squares_activity.generatePhonologicalSquaresActivity(
-        images: images,
-        isLandscape: _pageOrientations[_currentPage],
-        a4WidthPts: _a4WidthPts,
-        a4HeightPts: _a4HeightPts,
-      );
+      final result = await phonological_squares_activity
+          .generatePhonologicalSquaresActivity(
+            images: images,
+            isLandscape: _pageOrientations[_currentPage],
+            a4WidthPts: _a4WidthPts,
+            a4HeightPts: _a4HeightPts,
+          );
 
       setState(() {
         _pages[_currentPage].clear();
         _pages[_currentPage].addAll(result.pages[0]);
+      // Aplicar título e instrucciones desde backend o valores por defecto
+      _applyTitleAndInstructions(
+        'phonological_squares',
+        defaultTitle: result.title,
+        defaultInstructions: result.instructions,
+      );
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Actividad de Cuadrados Fonológicos generada')),
+        const SnackBar(
+          content: Text('Actividad de Cuadrados Fonológicos generada'),
+        ),
       );
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error: $e')));
     }
   }
 
   Future<void> _generateCrosswordActivity() async {
     final images = _canvasImages
-        .where((element) => element.type == CanvasElementType.networkImage || element.type == CanvasElementType.pictogramCard)
+        .where(
+          (element) =>
+              element.type == CanvasElementType.networkImage ||
+              element.type == CanvasElementType.pictogramCard,
+        )
         .toList();
 
     if (images.isEmpty) {
@@ -1938,21 +2422,31 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
       setState(() {
         _pages[_currentPage].clear();
         _pages[_currentPage].addAll(result.pages[0]);
+      // Aplicar título e instrucciones desde backend o valores por defecto
+      _applyTitleAndInstructions(
+        'crossword',
+        defaultTitle: result.title,
+        defaultInstructions: result.instructions,
+      );
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Crucigrama generado')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Crucigrama generado')));
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error: $e')));
     }
   }
 
   Future<void> _generateWordSearchActivity() async {
     final images = _canvasImages
-        .where((element) => element.type == CanvasElementType.networkImage || element.type == CanvasElementType.pictogramCard)
+        .where(
+          (element) =>
+              element.type == CanvasElementType.networkImage ||
+              element.type == CanvasElementType.pictogramCard,
+        )
         .toList();
 
     if (images.isEmpty) {
@@ -1973,21 +2467,31 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
       setState(() {
         _pages[_currentPage].clear();
         _pages[_currentPage].addAll(result.pages[0]);
+      // Aplicar título e instrucciones desde backend o valores por defecto
+      _applyTitleAndInstructions(
+        'word_search',
+        defaultTitle: result.title,
+        defaultInstructions: result.instructions,
+      );
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Sopa de letras generada')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Sopa de letras generada')));
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error: $e')));
     }
   }
 
   Future<void> _generateSentenceCompletionActivity() async {
     final images = _canvasImages
-        .where((element) => element.type == CanvasElementType.networkImage || element.type == CanvasElementType.pictogramCard)
+        .where(
+          (element) =>
+              element.type == CanvasElementType.networkImage ||
+              element.type == CanvasElementType.pictogramCard,
+        )
         .toList();
 
     if (images.isEmpty) {
@@ -1998,21 +2502,23 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
     }
 
     // Mostrar configuración
-    final config = await showDialog<sentence_completion_activity.SentenceCompletionConfig>(
-      context: context,
-      builder: (context) => const sentence_completion_activity.SentenceCompletionConfigDialog(),
-    );
+    final config =
+        await showDialog<sentence_completion_activity.SentenceCompletionConfig>(
+          context: context,
+          builder: (context) =>
+              const sentence_completion_activity.SentenceCompletionConfigDialog(),
+        );
 
     if (config == null) return;
 
     try {
-      final result =
-          await sentence_completion_activity.generateSentenceCompletionActivity(
-        config: config,
-        isLandscape: _pageOrientations[_currentPage],
-        a4WidthPts: _a4WidthPts,
-        a4HeightPts: _a4HeightPts,
-      );
+      final result = await sentence_completion_activity
+          .generateSentenceCompletionActivity(
+            config: config,
+            isLandscape: _pageOrientations[_currentPage],
+            a4WidthPts: _a4WidthPts,
+            a4HeightPts: _a4HeightPts,
+          );
 
       if (result.pages.length > _pages.length) {
         setState(() {
@@ -2036,12 +2542,16 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Actividad generada con ${result.pages.length} páginas')),
+        SnackBar(
+          content: Text(
+            'Actividad generada con ${result.pages.length} páginas',
+          ),
+        ),
       );
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error: $e')));
     }
   }
 
@@ -2076,7 +2586,8 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
         usePictograms: usePictograms,
       );
 
-      if (result.pages.isEmpty || (result.pages.isNotEmpty && result.pages[0].isEmpty)) {
+      if (result.pages.isEmpty ||
+          (result.pages.isNotEmpty && result.pages[0].isEmpty)) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
@@ -2152,7 +2663,8 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
         usePictograms: usePictograms,
       );
 
-      if (result.pages.isEmpty || (result.pages.isNotEmpty && result.pages[0].isEmpty)) {
+      if (result.pages.isEmpty ||
+          (result.pages.isNotEmpty && result.pages[0].isEmpty)) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('No se encontraron palabras relacionadas'),
@@ -2230,15 +2742,73 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(
-          result.message ?? 'Actividad de instrucciones generada',
-        ),
+        content: Text(result.message ?? 'Actividad de instrucciones generada'),
       ),
     );
   }
 
   /// Mapeo de nombres de actividad a sus métodos de generación
-  void _handleActivitySelection(String activityName) {
+  Future<void> _handleActivitySelection(String activityName) async {
+    // Buscar el tipo de actividad en el servicio para obtener las instrucciones visuales
+    try {
+      if (kDebugMode) {
+        print('=== DEBUG: Buscando actividad: $activityName');
+      }
+
+      final activities = await _activityTypeService.getEnabled();
+
+      if (kDebugMode) {
+        print('=== DEBUG: Actividades encontradas: ${activities.length}');
+        for (final act in activities) {
+          print('  - ${act.name}: activityPictogramUrl=${act.activityPictogramUrl}, materials=${act.materialPictogramUrls?.length ?? 0}');
+        }
+      }
+
+      final activityType = activities.firstWhere(
+        (a) => a.name == activityName,
+        orElse: () => activities.first,
+      );
+
+      if (kDebugMode) {
+        print('=== DEBUG: Tipo de actividad encontrado: ${activityType.name}');
+        print('=== DEBUG: activityPictogramUrl: ${activityType.activityPictogramUrl}');
+        print('=== DEBUG: materialPictogramUrls: ${activityType.materialPictogramUrls}');
+      }
+
+      // Si tiene instrucciones visuales configuradas, añadirlas al canvas
+      if (activityType.activityPictogramUrl != null ||
+          (activityType.materialPictogramUrls != null &&
+              activityType.materialPictogramUrls!.isNotEmpty)) {
+        if (kDebugMode) {
+          print('=== DEBUG: Añadiendo barra de instrucciones visuales');
+        }
+
+        final visualInstructionsBar = CanvasImage.visualInstructionsBar(
+          id: _generateId(),
+          position: const Offset(100, 100),
+          activityPictogramUrl: activityType.activityPictogramUrl,
+          materialPictogramUrls: activityType.materialPictogramUrls,
+        );
+
+        setState(() {
+          _canvasImages.add(visualInstructionsBar);
+          _saveToHistory();
+        });
+
+        if (kDebugMode) {
+          print('=== DEBUG: Barra de instrucciones añadida al canvas');
+        }
+      } else {
+        if (kDebugMode) {
+          print('=== DEBUG: No hay instrucciones visuales configuradas para esta actividad');
+        }
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('=== DEBUG ERROR: Error al obtener tipo de actividad: $e');
+      }
+    }
+
     final activityMap = {
       'activity_pack': _generateActivityPack,
       'shadow_matching': _generateShadowMatchingActivity,
@@ -2307,6 +2877,7 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
         _logoPath = image.path;
         _logoWebBytes = bytes;
       });
+      await _saveUserLogoPreference();
     }
   }
 
@@ -2374,7 +2945,8 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
     setState(() {
       final index = _pages[_currentPage].indexWhere((img) => img.id == id);
       if (index != -1) {
-        _pages[_currentPage][index].isBold = !_pages[_currentPage][index].isBold;
+        _pages[_currentPage][index].isBold =
+            !_pages[_currentPage][index].isBold;
       }
     });
   }
@@ -2383,7 +2955,8 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
     setState(() {
       final index = _pages[_currentPage].indexWhere((img) => img.id == id);
       if (index != -1) {
-        _pages[_currentPage][index].isItalic = !_pages[_currentPage][index].isItalic;
+        _pages[_currentPage][index].isItalic =
+            !_pages[_currentPage][index].isItalic;
       }
     });
   }
@@ -2392,7 +2965,8 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
     setState(() {
       final index = _pages[_currentPage].indexWhere((img) => img.id == id);
       if (index != -1) {
-        _pages[_currentPage][index].isUnderline = !_pages[_currentPage][index].isUnderline;
+        _pages[_currentPage][index].isUnderline =
+            !_pages[_currentPage][index].isUnderline;
       }
     });
   }
@@ -2444,6 +3018,8 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
         return element.width ?? 150.0;
       case CanvasElementType.shadow:
         return element.width ?? 150.0;
+      case CanvasElementType.visualInstructionsBar:
+        return element.width ?? 400.0;
     }
   }
 
@@ -2452,11 +3028,15 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
     if (index == -1) return;
 
     final element = _pages[_currentPage][index];
-    final adjustedDelta = delta / (_viewScale == 0 ? 1 : _viewScale);
+    final currentScale = _transformationController.value.getMaxScaleOnAxis();
+    final adjustedDelta = delta / (currentScale == 0 ? 1 : currentScale);
 
-    if (element.type == CanvasElementType.shape || element.type == CanvasElementType.text) {
+    if (element.type == CanvasElementType.shape ||
+        element.type == CanvasElementType.text) {
       final minSize = 20.0;
-      double newWidth = (element.width ?? (element.type == CanvasElementType.text ? 300.0 : 100.0));
+      double newWidth =
+          (element.width ??
+          (element.type == CanvasElementType.text ? 300.0 : 100.0));
       double newHeight = (element.height ?? 100.0);
       double newLeft = element.position.dx;
       double newTop = element.position.dy;
@@ -2504,8 +3084,7 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
           _pages[_currentPage][index].scale = newScale;
         });
       } else {
-        // Resize unidireccional desde laterales
-        // Si la imagen no tiene height definido, usar el width como base (imágenes cuadradas)
+        // Resize unidireccional desde laterales (solo ancho o solo alto)
         final baseWidth = element.width ?? base;
         final baseHeight = element.height ?? baseWidth;
 
@@ -2513,19 +3092,38 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
         final currentHeight = baseHeight * element.scale;
         double newWidth = currentWidth;
         double newHeight = currentHeight;
+        double newLeft = element.position.dx;
+        double newTop = element.position.dy;
 
         if (handle.x != 0) {
-          // Lateral horizontal
-          newWidth = (currentWidth + adjustedDelta.dx * handle.x).clamp(20.0, 2000.0);
+          // Lateral horizontal - solo ajustar ancho
+          if (handle.x < 0) {
+            // Lado izquierdo: ajustar ancho y posición
+            final widthChange = -adjustedDelta.dx;
+            newWidth = (currentWidth + widthChange).clamp(20.0, 2000.0);
+            newLeft += (currentWidth - newWidth);
+          } else {
+            // Lado derecho: solo ajustar ancho
+            newWidth = (currentWidth + adjustedDelta.dx).clamp(20.0, 2000.0);
+          }
         }
         if (handle.y != 0) {
-          // Lateral vertical
-          newHeight = (currentHeight + adjustedDelta.dy * handle.y).clamp(20.0, 2000.0);
+          // Lateral vertical - solo ajustar alto
+          if (handle.y < 0) {
+            // Lado superior: ajustar alto y posición
+            final heightChange = -adjustedDelta.dy;
+            newHeight = (currentHeight + heightChange).clamp(20.0, 2000.0);
+            newTop += (currentHeight - newHeight);
+          } else {
+            // Lado inferior: solo ajustar alto
+            newHeight = (currentHeight + adjustedDelta.dy).clamp(20.0, 2000.0);
+          }
         }
 
         setState(() {
           _pages[_currentPage][index].width = newWidth / element.scale;
           _pages[_currentPage][index].height = newHeight / element.scale;
+          _pages[_currentPage][index].position = Offset(newLeft, newTop);
         });
       }
     }
@@ -2542,7 +3140,8 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
 
   void _updateImagePosition(String id, Offset delta) {
     setState(() {
-      final adjustedDelta = delta / (_viewScale == 0 ? 1 : _viewScale);
+      final currentScale = _transformationController.value.getMaxScaleOnAxis();
+      final adjustedDelta = delta / (currentScale == 0 ? 1 : currentScale);
       final ids = _idsForElement(id);
       for (final targetId in ids) {
         final index = _pages[_currentPage].indexWhere(
@@ -2652,7 +3251,14 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
   }
 
   Set<String> _idsForElement(String id) {
-    final element = _canvasImages.firstWhere((e) => e.id == id);
+    final element = _canvasImages.firstWhere(
+      (e) => e.id == id,
+      orElse: () => CanvasImage(
+        id: id,
+        type: CanvasElementType.text,
+        position: Offset.zero,
+      ),
+    );
     if (element.groupId == null) return {id};
     final groupIds = _canvasImages
         .where((e) => e.groupId == element.groupId)
@@ -2740,7 +3346,14 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
         }
       }
       _selectedImageIds = _selectedImageIds.where((id) {
-        final el = _pages[_currentPage].firstWhere((e) => e.id == id);
+        final el = _pages[_currentPage].firstWhere(
+          (e) => e.id == id,
+          orElse: () => CanvasImage(
+            id: id,
+            type: CanvasElementType.text,
+            position: Offset.zero,
+          ),
+        );
         return el.groupId == null;
       }).toSet();
       _saveToHistory();
@@ -3039,12 +3652,20 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
 
   void _addPage() {
     setState(() {
+      // Guardar el contenido actual antes de cambiar de página
+      _saveControllersToCurrentPage();
+
       _pages.add([]);
       _pageTemplates.add(TemplateType.blank);
       _pageBackgrounds.add(Colors.white);
       _pageOrientations.add(false); // Nueva página en vertical por defecto
+      _pageTitles.add(''); // Título vacío para la nueva página
+      _pageInstructions.add(''); // Instrucciones vacías para la nueva página
       _currentPage = _pages.length - 1;
       _selectedImageIds.clear();
+
+      // Sincronizar los controllers con la nueva página
+      _syncControllersWithCurrentPage();
     });
   }
 
@@ -3055,10 +3676,15 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
       _pageTemplates.removeAt(index);
       _pageBackgrounds.removeAt(index);
       _pageOrientations.removeAt(index);
+      _pageTitles.removeAt(index);
+      _pageInstructions.removeAt(index);
       if (_currentPage >= _pages.length) {
         _currentPage = _pages.length - 1;
       }
       _selectedImageIds.clear();
+
+      // Sincronizar con la página actual después de eliminar
+      _syncControllersWithCurrentPage();
     });
   }
 
@@ -3072,24 +3698,48 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
     setState(() {
       // Validar que el índice esté dentro del rango
       if (index < 0 || index >= _pages.length) {
-        print('ERROR: Índice de página fuera de rango: $index, total páginas: ${_pages.length}');
+        print(
+          'ERROR: Índice de página fuera de rango: $index, total páginas: ${_pages.length}',
+        );
         return;
       }
+
+      // Guardar el contenido de los controllers en la página actual antes de cambiar
+      _saveControllersToCurrentPage();
 
       // Asegurar que _pageOrientations tenga suficientes elementos
       while (_pageOrientations.length <= index) {
         _pageOrientations.add(false);
-        print('DEBUG: Añadiendo orientación para página ${_pageOrientations.length - 1}');
+        print(
+          'DEBUG: Añadiendo orientación para página ${_pageOrientations.length - 1}',
+        );
+      }
+
+      // Asegurar que _pageTitles y _pageInstructions tengan suficientes elementos
+      while (_pageTitles.length <= index) {
+        _pageTitles.add('');
+      }
+      while (_pageInstructions.length <= index) {
+        _pageInstructions.add('');
       }
 
       _currentPage = index;
       _selectedImageIds.clear();
+
+      // Sincronizar los controllers con la nueva página
+      _syncControllersWithCurrentPage();
     });
   }
 
   void _changeZoom(double delta) {
     setState(() {
       _canvasZoom = (_canvasZoom + delta).clamp(0.5, 2.5).toDouble();
+
+      // Actualizar el TransformationController para aplicar el zoom
+      final currentTranslation = _transformationController.value.getTranslation();
+      _transformationController.value = Matrix4.identity()
+        ..setTranslation(currentTranslation)
+        ..scale(_canvasZoom, _canvasZoom, 1.0);
     });
   }
 
@@ -3142,7 +3792,9 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
     }
 
     // Cargar fuentes escolares para PDF
-    final coleCarreiraData = await rootBundle.load('assets/fonts/ColeCarreira.ttf');
+    final coleCarreiraData = await rootBundle.load(
+      'assets/fonts/ColeCarreira.ttf',
+    );
     final coleCarreiraFont = pw.Font.ttf(coleCarreiraData);
 
     final escolarGData = await rootBundle.load('assets/fonts/Escolar_G.TTF');
@@ -3194,8 +3846,10 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
         ),
       );
 
-      final headerText = _headerController.text.trim();
-      final footerText = _footerController.text.trim();
+      // Obtener título e instrucciones de esta página específica
+      final headerText = pageIndex < _pageTitles.length ? _pageTitles[pageIndex].trim() : '';
+      final footerText = pageIndex < _pageInstructions.length ? _pageInstructions[pageIndex].trim() : '';
+      final documentFooter = _documentFooterController.text.trim();
       final isFirst = pageIndex == 0;
       final isLast = pageIndex == _pages.length - 1;
 
@@ -3255,35 +3909,63 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
         }
       }
 
-      if (headerText.isNotEmpty && shouldRender(_headerScope)) {
-        const headerFontSize = 14.0;
-        final headerHeight = headerFontSize * 1.2;
-        final headerBottom = _bottomFromCanvas(10, headerHeight);
-        widgets.add(
-          pw.Positioned(
-            left: 20,
-            right: 20,
-            bottom: headerBottom,
-            child: pw.Text(
-              headerText,
-              style: const pw.TextStyle(fontSize: headerFontSize),
-            ),
-          ),
-        );
-      }
+      // Renderizar título e instrucciones juntos en la parte superior
+      if ((headerText.isNotEmpty && shouldRender(_headerScope)) ||
+          (footerText.isNotEmpty && shouldRender(_footerScope))) {
+        const headerFontSize = 16.0;
+        const instructionsFontSize = 12.0;
 
-      if (footerText.isNotEmpty && shouldRender(_footerScope)) {
-        const footerFontSize = 12.0;
-        final footerHeight = footerFontSize * 1.2;
-        final footerBottom = _bottomFromCanvas(10, footerHeight);
+        // Calcular altura total del bloque
+        double totalHeight = 0;
+        if (headerText.isNotEmpty && shouldRender(_headerScope)) {
+          totalHeight += headerFontSize * 1.2;
+        }
+        if (headerText.isNotEmpty && footerText.isNotEmpty &&
+            shouldRender(_headerScope) && shouldRender(_footerScope)) {
+          totalHeight += 4; // Espaciado entre título e instrucciones
+        }
+        if (footerText.isNotEmpty && shouldRender(_footerScope)) {
+          totalHeight += instructionsFontSize * 1.2;
+        }
+
+        final blockBottom = _bottomFromCanvas(10, totalHeight);
+
+        final children = <pw.Widget>[];
+        if (headerText.isNotEmpty && shouldRender(_headerScope)) {
+          children.add(
+            pw.Text(
+              headerText,
+              style: pw.TextStyle(
+                fontSize: headerFontSize,
+                fontWeight: pw.FontWeight.bold,
+              ),
+              textAlign: pw.TextAlign.center,
+            ),
+          );
+        }
+        if (headerText.isNotEmpty && footerText.isNotEmpty &&
+            shouldRender(_headerScope) && shouldRender(_footerScope)) {
+          children.add(pw.SizedBox(height: 4));
+        }
+        if (footerText.isNotEmpty && shouldRender(_footerScope)) {
+          children.add(
+            pw.Text(
+              footerText,
+              style: const pw.TextStyle(fontSize: instructionsFontSize),
+              textAlign: pw.TextAlign.center,
+            ),
+          );
+        }
+
         widgets.add(
           pw.Positioned(
             left: 20,
             right: 20,
-            bottom: footerBottom,
-            child: pw.Text(
-              footerText,
-              style: const pw.TextStyle(fontSize: footerFontSize),
+            bottom: blockBottom,
+            child: pw.Column(
+              mainAxisSize: pw.MainAxisSize.min,
+              crossAxisAlignment: pw.CrossAxisAlignment.center,
+              children: children,
             ),
           ),
         );
@@ -3306,32 +3988,43 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
                       element.flipHorizontal ? -1.0 : 1.0,
                       element.flipVertical ? -1.0 : 1.0,
                       1.0,
-                  ),
-                  alignment: pw.Alignment.center,
-                  child: pw.Container(
-                    width: textWidth,
-                    padding: pw.EdgeInsets.zero,
-                    child: pw.Text(
-                      element.text ?? '',
-                      style: pw.TextStyle(
-                        fontSize: element.fontSize,
-                        color: PdfColor.fromInt(element.textColor.value),
-                          fontWeight: element.isBold ? pw.FontWeight.bold : pw.FontWeight.normal,
-                          fontStyle: element.isItalic ? pw.FontStyle.italic : pw.FontStyle.normal,
-                          decoration: element.isUnderline ? pw.TextDecoration.underline : pw.TextDecoration.none,
-                          font: element.fontFamily == 'ColeCarreira' ? coleCarreiraFont
-                              : element.fontFamily == 'EscolarG' ? escolarGFont
-                              : element.fontFamily == 'EscolarP' ? escolarPFont
-                              : element.fontFamily == 'Trace' ? traceFont
-                              : element.fontFamily == 'Massallera' ? massalleraFont
+                    ),
+                    alignment: pw.Alignment.center,
+                    child: pw.Container(
+                      width: textWidth,
+                      padding: pw.EdgeInsets.zero,
+                      child: pw.Text(
+                        element.text ?? '',
+                        style: pw.TextStyle(
+                          fontSize: element.fontSize,
+                          color: PdfColor.fromInt(element.textColor.value),
+                          fontWeight: element.isBold
+                              ? pw.FontWeight.bold
+                              : pw.FontWeight.normal,
+                          fontStyle: element.isItalic
+                              ? pw.FontStyle.italic
+                              : pw.FontStyle.normal,
+                          decoration: element.isUnderline
+                              ? pw.TextDecoration.underline
+                              : pw.TextDecoration.none,
+                          font: element.fontFamily == 'ColeCarreira'
+                              ? coleCarreiraFont
+                              : element.fontFamily == 'EscolarG'
+                              ? escolarGFont
+                              : element.fontFamily == 'EscolarP'
+                              ? escolarPFont
+                              : element.fontFamily == 'Trace'
+                              ? traceFont
+                              : element.fontFamily == 'Massallera'
+                              ? massalleraFont
                               : null,
+                        ),
+                        textAlign: pw.TextAlign.center,
                       ),
-                      textAlign: pw.TextAlign.center,
                     ),
                   ),
                 ),
               ),
-            ),
             );
           } else if (element.type == CanvasElementType.localImage) {
             // Imagen local del dispositivo
@@ -3565,10 +4258,100 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
                 ),
               );
             }
+          } else if (element.type == CanvasElementType.visualInstructionsBar) {
+            // Barra de instrucciones visuales
+            final barWidth = (element.width ?? 400) * element.scale;
+            final barHeight = (element.height ?? 80) * element.scale;
+            final bottom = _bottomFromCanvas(element.position.dy, barHeight);
+
+            final barWidgets = <pw.Widget>[];
+
+            // Pictograma de actividad (con borde azul)
+            if (element.activityPictogramUrl != null) {
+              final activityImage = await _fetchNetworkImageForPdf(element.activityPictogramUrl!);
+              if (activityImage != null) {
+                barWidgets.add(
+                  pw.Container(
+                    width: 60,
+                    height: 60,
+                    margin: const pw.EdgeInsets.only(right: 8),
+                    decoration: pw.BoxDecoration(
+                      border: pw.Border.all(color: PdfColors.blue300, width: 2),
+                      borderRadius: pw.BorderRadius.circular(4),
+                    ),
+                    child: pw.ClipRRect(
+                      horizontalRadius: 4,
+                      verticalRadius: 4,
+                      child: pw.Image(activityImage, fit: pw.BoxFit.contain),
+                    ),
+                  ),
+                );
+              }
+            }
+
+            // Pictogramas de materiales
+            if (element.materialPictogramUrls != null) {
+              for (final materialUrl in element.materialPictogramUrls!) {
+                final materialImage = await _fetchNetworkImageForPdf(materialUrl);
+                if (materialImage != null) {
+                  barWidgets.add(
+                    pw.Container(
+                      width: 60,
+                      height: 60,
+                      margin: const pw.EdgeInsets.only(right: 8),
+                      child: pw.Image(materialImage, fit: pw.BoxFit.contain),
+                    ),
+                  );
+                }
+              }
+            }
+
+            widgets.add(
+              pw.Positioned(
+                left: element.position.dx,
+                bottom: bottom,
+                child: pw.Transform.rotate(
+                  angle: element.rotation,
+                  alignment: pw.Alignment.center,
+                  child: pw.Container(
+                    width: barWidth,
+                    height: barHeight,
+                    decoration: pw.BoxDecoration(
+                      color: PdfColors.white,
+                      border: pw.Border.all(color: PdfColors.grey400, width: 2),
+                      borderRadius: pw.BorderRadius.circular(8),
+                    ),
+                    child: pw.Padding(
+                      padding: const pw.EdgeInsets.all(10),
+                      child: pw.Row(
+                        mainAxisAlignment: pw.MainAxisAlignment.start,
+                        children: barWidgets,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            );
           }
         } catch (e) {
           debugPrint('Error al procesar elemento: $e');
         }
+      }
+
+      // Pie de página del documento (autor, licencia, etc.)
+      if (documentFooter.isNotEmpty) {
+        widgets.add(
+          pw.Positioned(
+            bottom: 10,
+            left: 20,
+            right: _showPageNumbers ? 120 : 20, // Dejar espacio para número de página si existe
+            child: pw.Text(
+              documentFooter,
+              style: pw.TextStyle(fontSize: 8, color: PdfColors.grey700),
+              textAlign: pw.TextAlign.center,
+            ),
+          ),
+        );
       }
 
       if (_showPageNumbers) {
@@ -3581,42 +4364,47 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
         );
       }
 
-      final allowCredits = _pageTemplates[pageIndex] != TemplateType.writingPractice;
-      // Créditos verticales (omitidos en práctica de escritura)
-      if (allowCredits && _showArasaacCredit) {
+      // Créditos verticales igual que en el canvas
+      if (_showArasaacCredit) {
         widgets.add(
           pw.Positioned(
-            left: 15,
-            bottom: 10,
-            child: pw.Transform.rotate(
-              angle: math.pi / 2,
-              alignment: pw.Alignment.bottomLeft,
-              child: pw.SizedBox(
-                width: pageHeight - 20,
-                child: pw.Text(
-                  _arasaacCredit,
-                  style: pw.TextStyle(fontSize: 8, color: PdfColors.grey600),
-                  textAlign: pw.TextAlign.center,
+            left: 10,
+            top: 0,
+            child: pw.SizedBox(
+              height: pageHeight,
+              child: pw.Transform.rotate(
+                angle: -math.pi / 2, // quarterTurns: 3 equivale a -90 grados
+                alignment: pw.Alignment.topLeft,
+                child: pw.SizedBox(
+                  width: pageHeight - 20,
+                  child: pw.Text(
+                    _arasaacCredit,
+                    style: pw.TextStyle(fontSize: 8, color: PdfColors.grey600),
+                    textAlign: pw.TextAlign.center,
+                  ),
                 ),
               ),
             ),
           ),
         );
       }
-      if (allowCredits && _showSoyVisualCredit) {
+      if (_showSoyVisualCredit) {
         widgets.add(
           pw.Positioned(
-            left: pageWidth - 15,
-            bottom: 10,
-            child: pw.Transform.rotate(
-              angle: math.pi / 2,
-              alignment: pw.Alignment.bottomLeft,
-              child: pw.SizedBox(
-                width: pageHeight - 20,
-                child: pw.Text(
-                  _soyVisualCredit,
-                  style: pw.TextStyle(fontSize: 8, color: PdfColors.grey600),
-                  textAlign: pw.TextAlign.center,
+            right: 10,
+            top: 0,
+            child: pw.SizedBox(
+              height: pageHeight,
+              child: pw.Transform.rotate(
+                angle: -math.pi / 2, // quarterTurns: 3 equivale a -90 grados
+                alignment: pw.Alignment.topLeft,
+                child: pw.SizedBox(
+                  width: pageHeight - 20,
+                  child: pw.Text(
+                    _soyVisualCredit,
+                    style: pw.TextStyle(fontSize: 8, color: PdfColors.grey600),
+                    textAlign: pw.TextAlign.center,
+                  ),
                 ),
               ),
             ),
@@ -4005,6 +4793,11 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
                 _sidebarMode = SidebarMode.config;
               });
             },
+            onSelectVisualInstructions: () {
+              setState(() {
+                _sidebarMode = SidebarMode.visualInstructions;
+              });
+            },
             isTextSelected: _sidebarMode == SidebarMode.text,
             isShapesSelected: _sidebarMode == SidebarMode.shapes,
             isArasaacSelected: _sidebarMode == SidebarMode.arasaac,
@@ -4012,6 +4805,7 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
             isTemplatesSelected: _sidebarMode == SidebarMode.templates,
             isCreatorSelected: _sidebarMode == SidebarMode.creador,
             isConfigSelected: _sidebarMode == SidebarMode.config,
+            isVisualInstructionsSelected: _sidebarMode == SidebarMode.visualInstructions,
             panel: _buildSidebarPanel(),
           ),
           Expanded(
@@ -4039,9 +4833,6 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
                             ? availableWidth / baseWidth
                             : availableHeight / baseHeight;
 
-                        final displayScale = scaleToFit * _canvasZoom;
-                        _viewScale = displayScale;
-
                         if (_canvasSize != Size(baseWidth, baseHeight)) {
                           WidgetsBinding.instance.addPostFrameCallback((_) {
                             setState(() {
@@ -4050,594 +4841,592 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
                           });
                         }
 
-                        return ClipRect(
+                        // Inicializar el controller con el zoom actual si no está establecido
+                        if (_transformationController.value == Matrix4.identity()) {
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            _transformationController.value = Matrix4.identity()
+                              ..scale(_canvasZoom, _canvasZoom, 1.0);
+                          });
+                        }
+
+                        return InteractiveViewer(
+                          transformationController: _transformationController,
+                          minScale: 0.5,
+                          maxScale: 2.5,
+                          boundaryMargin: const EdgeInsets.all(double.infinity),
+                          constrained: false,
+                          onInteractionUpdate: (details) {
+                            setState(() {
+                              _canvasZoom = _transformationController.value.getMaxScaleOnAxis();
+                            });
+                          },
                           child: Transform.scale(
-                            scale: displayScale,
-                            alignment: Alignment.center,
+                            scale: scaleToFit,
+                            alignment: Alignment.topLeft,
                             child: Container(
-                              width: baseWidth,
-                              height: baseHeight,
-                              decoration: BoxDecoration(
-                                color: _pageBackgrounds[_currentPage],
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withOpacity(0.2),
-                                    blurRadius: 10,
-                                    offset: const Offset(0, 5),
+                                  width: baseWidth,
+                                  height: baseHeight,
+                                  decoration: BoxDecoration(
+                                    color: _pageBackgrounds[_currentPage],
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withOpacity(0.2),
+                                        blurRadius: 10,
+                                        offset: const Offset(0, 5),
+                                      ),
+                                    ],
                                   ),
-                                ],
-                              ),
-                              child: Stack(
-                                children: [
-                                  // Fondo con plantilla
-                                  CustomPaint(
-                                    size: Size(baseWidth, baseHeight),
-                                    painter: TemplatePainter(_currentTemplate),
-                                  ),
-                                  GestureDetector(
-                                    onTap: () => _selectImage(null),
-                                    child: Container(color: Colors.transparent),
-                                  ),
-                                  ..._canvasImages.map((canvasElement) {
-                                    final isSelected = _selectedImageIds
-                                        .contains(canvasElement.id);
-                                    Widget content;
+                                  child: Stack(
+                                    children: [
+                                      CustomPaint(
+                                        size: Size(baseWidth, baseHeight),
+                                        painter: TemplatePainter(_currentTemplate),
+                                      ),
+                                      GestureDetector(
+                                        onTap: () => _selectImage(null),
+                                        child: Container(color: Colors.transparent),
+                                      ),
+                                      ..._canvasImages.map((canvasElement) {
+                                        final isSelected =
+                                            _selectedImageIds.contains(canvasElement.id);
+                                        // Compensación de zoom para bordes de selección
+                                        final currentZoom = _transformationController.value.getMaxScaleOnAxis();
+                                        final borderWidth = 2 / currentZoom;
 
-                                    if (canvasElement.type ==
-                                        CanvasElementType.text) {
-                                      final textWidth = (canvasElement.width ?? 300.0) * canvasElement.scale;
-                                      content = Container(
-                                        width: textWidth,
-                                        padding: EdgeInsets.zero,
-                                        decoration: BoxDecoration(
-                                          border: isSelected
-                                              ? Border.all(
-                                                  color: Colors.blue,
-                                                  width: 2,
-                                                )
-                                              : null,
-                                        ),
-                                        child: Text(
-                                          canvasElement.text ?? '',
-                                          style: TextStyle(
-                                            fontSize: canvasElement.fontSize,
-                                            color: canvasElement.textColor,
-                                            fontFamily: canvasElement.fontFamily,
-                                            fontWeight: canvasElement.isBold ? FontWeight.bold : FontWeight.normal,
-                                            fontStyle: canvasElement.isItalic ? FontStyle.italic : FontStyle.normal,
-                                            decoration: canvasElement.isUnderline ? TextDecoration.underline : TextDecoration.none,
-                                          ),
-                                          textAlign: TextAlign.center,
-                                        ),
-                                      );
-                                    } else if (canvasElement.type ==
-                                        CanvasElementType.shape) {
-                                      final size = Size(
-                                        (canvasElement.width ?? 100.0) *
-                                            canvasElement.scale,
-                                        (canvasElement.height ?? 100.0) *
-                                            canvasElement.scale,
-                                      );
-                                      content = CustomPaint(
-                                        size: size,
-                                        painter: ShapePainter(
-                                          shapeType: canvasElement.shapeType!,
-                                          color: canvasElement.shapeColor,
-                                          strokeWidth:
-                                              canvasElement.strokeWidth,
-                                          isSelected: isSelected,
-                                          isDashed: canvasElement.isDashed,
-                                        ),
-                                      );
-                                    } else if (canvasElement.type ==
-                                        CanvasElementType.pictogramCard) {
-                                      // Tarjeta de pictograma (imagen + texto)
-                                      final cardWidth =
-                                          (canvasElement.width ?? 150) *
-                                          canvasElement.scale;
-                                      final cardHeight =
-                                          (canvasElement.height ?? 190) *
-                                          canvasElement.scale;
-
-                                      content = Container(
-                                        width: cardWidth,
-                                        height: cardHeight,
-                                        decoration: BoxDecoration(
-                                          color: Colors.white,
-                                          border: Border.all(
-                                            color: isSelected
-                                                ? Colors.blue
-                                                : Colors.black,
-                                            width: isSelected ? 3 : 1,
-                                          ),
-                                          borderRadius: BorderRadius.circular(
-                                            8,
-                                          ),
-                                          boxShadow: [
-                                            BoxShadow(
-                                              color: Colors.black.withOpacity(
-                                                0.1,
-                                              ),
-                                              blurRadius: 4,
-                                              offset: const Offset(0, 2),
+                                        Widget content;
+                                        if (canvasElement.type == CanvasElementType.text) {
+                                          final textWidth =
+                                              (canvasElement.width ?? 300.0) * canvasElement.scale;
+                                          content = Container(
+                                            width: textWidth,
+                                            padding: EdgeInsets.zero,
+                                            decoration: BoxDecoration(
+                                              border: isSelected
+                                                  ? Border.all(color: Colors.blue, width: borderWidth)
+                                                  : null,
                                             ),
-                                          ],
-                                        ),
-                                        child: ClipRRect(
-                                          borderRadius: BorderRadius.circular(
-                                            8,
-                                          ),
-                                          child: Column(
-                                            children: [
-                                              // Imagen - ocupa el espacio proporcional
-                                              Expanded(
-                                                flex: 150,
-                                                child: Padding(
-                                                  padding: const EdgeInsets.all(
-                                                    6,
-                                                  ),
-                                                  child: CachedNetworkImage(
-                                                    imageUrl:
-                                                        canvasElement.imageUrl!,
-                                                    fit: BoxFit.contain,
-                                                    placeholder:
-                                                        (
-                                                          context,
-                                                          url,
-                                                        ) => const Center(
-                                                          child:
-                                                              CircularProgressIndicator(),
-                                                        ),
-                                                    errorWidget:
-                                                        (context, url, error) =>
-                                                            const Icon(
-                                                              Icons.error,
-                                                            ),
-                                                  ),
-                                                ),
+                                            child: Text(
+                                              canvasElement.text ?? '',
+                                              style: TextStyle(
+                                                fontSize: canvasElement.fontSize,
+                                                color: canvasElement.textColor,
+                                                fontFamily: canvasElement.fontFamily,
+                                                fontWeight: canvasElement.isBold
+                                                    ? FontWeight.bold
+                                                    : FontWeight.normal,
+                                                fontStyle: canvasElement.isItalic
+                                                    ? FontStyle.italic
+                                                    : FontStyle.normal,
+                                                decoration: canvasElement.isUnderline
+                                                    ? TextDecoration.underline
+                                                    : TextDecoration.none,
                                               ),
-                                              // Texto - ocupa el espacio restante
-                                              Container(
-                                                height:
-                                                    40 * canvasElement.scale,
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                      horizontal: 6,
-                                                      vertical: 4,
+                                              textAlign: TextAlign.center,
+                                            ),
+                                          );
+                                        } else if (canvasElement.type ==
+                                            CanvasElementType.shape) {
+                                          final size = Size(
+                                            (canvasElement.width ?? 100.0) * canvasElement.scale,
+                                            (canvasElement.height ?? 100.0) * canvasElement.scale,
+                                          );
+                                          content = CustomPaint(
+                                            size: size,
+                                            painter: ShapePainter(
+                                              shapeType: canvasElement.shapeType!,
+                                              color: canvasElement.shapeColor,
+                                              strokeWidth: canvasElement.strokeWidth,
+                                              isSelected: isSelected,
+                                              isDashed: canvasElement.isDashed,
+                                            ),
+                                          );
+                                        } else if (canvasElement.type ==
+                                            CanvasElementType.pictogramCard) {
+                                          final cardWidth =
+                                              (canvasElement.width ?? 150) * canvasElement.scale;
+                                          final cardHeight =
+                                              (canvasElement.height ?? 190) * canvasElement.scale;
+                                          content = Container(
+                                            width: cardWidth,
+                                            height: cardHeight,
+                                            decoration: BoxDecoration(
+                                              color: Colors.white,
+                                              border: Border.all(
+                                                color: isSelected ? Colors.blue : Colors.black,
+                                                width: isSelected ? (3 / currentZoom) : (1 / currentZoom),
+                                              ),
+                                              borderRadius: BorderRadius.circular(8 / currentZoom),
+                                              boxShadow: [
+                                                BoxShadow(
+                                                  color: Colors.black.withOpacity(0.1),
+                                                  blurRadius: 4 / currentZoom,
+                                                  offset: Offset(0, 2 / currentZoom),
+                                                ),
+                                              ],
+                                            ),
+                                            child: ClipRRect(
+                                              borderRadius: BorderRadius.circular(8 / currentZoom),
+                                              child: Column(
+                                                children: [
+                                                  Expanded(
+                                                    flex: 150,
+                                                    child: Padding(
+                                                      padding: EdgeInsets.all(6 / currentZoom),
+                                                      child: CachedNetworkImage(
+                                                        imageUrl: canvasElement.imageUrl!,
+                                                        fit: BoxFit.contain,
+                                                        placeholder: (context, url) =>
+                                                            const Center(child: CircularProgressIndicator()),
+                                                        errorWidget: (context, url, error) =>
+                                                            const Icon(Icons.error),
+                                                      ),
                                                     ),
-                                                alignment: Alignment.center,
-                                                child: Text(
-                                                  canvasElement.text ?? '',
-                                                  style: TextStyle(
-                                                    fontSize:
-                                                        canvasElement.fontSize *
-                                                        canvasElement.scale,
-                                                    fontWeight: FontWeight.bold,
-                                                    color:
-                                                        canvasElement.textColor,
                                                   ),
-                                                  textAlign: TextAlign.center,
-                                                  maxLines: 2,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
+                                                  Container(
+                                                    height: 40,
+                                                    width: double.infinity,
+                                                    color: Colors.grey[200],
+                                                    alignment: Alignment.center,
+                                                    child: Text(
+                                                      canvasElement.text ?? '',
+                                                      textAlign: TextAlign.center,
+                                                      style: TextStyle(
+                                                        fontSize: canvasElement.fontSize,
+                                                        fontWeight: canvasElement.isBold
+                                                            ? FontWeight.bold
+                                                            : FontWeight.normal,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          );
+                                        } else if (canvasElement.type ==
+                                            CanvasElementType.visualInstructionsBar) {
+                                          final barWidth =
+                                              (canvasElement.width ?? 400) * canvasElement.scale;
+                                          final barHeight =
+                                              (canvasElement.height ?? 80) * canvasElement.scale;
+
+                                          // Construir lista de pictogramas
+                                          final List<Widget> pictograms = [];
+
+                                          // Pictograma de actividad (con borde azul)
+                                          if (canvasElement.activityPictogramUrl != null) {
+                                            pictograms.add(
+                                              Container(
+                                                width: 60,
+                                                height: 60,
+                                                margin: const EdgeInsets.only(right: 8),
+                                                decoration: BoxDecoration(
+                                                  border: Border.all(color: Colors.blue, width: 2),
+                                                  borderRadius: BorderRadius.circular(4),
+                                                ),
+                                                child: ClipRRect(
+                                                  borderRadius: BorderRadius.circular(4),
+                                                  child: CachedNetworkImage(
+                                                    imageUrl: canvasElement.activityPictogramUrl!,
+                                                    fit: BoxFit.contain,
+                                                    placeholder: (context, url) =>
+                                                        const Center(child: CircularProgressIndicator()),
+                                                    errorWidget: (context, url, error) =>
+                                                        const Icon(Icons.error),
+                                                  ),
                                                 ),
                                               ),
-                                            ],
-                                          ),
-                                        ),
-                                      );
-                                    } else if (canvasElement.type ==
-                                        CanvasElementType.shadow) {
-                                      // Sombra (imagen en negro/silueta translúcida)
-                                      final scaledWidth =
-                                          (canvasElement.width ?? 150) *
-                                          canvasElement.scale;
-                                      final scaledHeight =
-                                          (canvasElement.height ?? 150) *
-                                          canvasElement.scale;
+                                            );
+                                          }
 
-                                      content = Container(
-                                        width: scaledWidth,
-                                        height: scaledHeight,
-                                        decoration: BoxDecoration(
-                                          border: isSelected
-                                              ? Border.all(
-                                                  color: Colors.blue,
-                                                  width: 2,
-                                                )
-                                              : null,
-                                        ),
-                                        child: ColorFiltered(
-                                          colorFilter: const ColorFilter.mode(
-                                            Colors.black,
-                                            BlendMode.srcIn,
-                                          ),
-                                          child: Opacity(
-                                            opacity: 0.3,
-                                            child: CachedNetworkImage(
+                                          // Pictogramas de materiales (sin borde especial)
+                                          if (canvasElement.materialPictogramUrls != null) {
+                                            for (final materialUrl in canvasElement.materialPictogramUrls!) {
+                                              pictograms.add(
+                                                Container(
+                                                  width: 60,
+                                                  height: 60,
+                                                  margin: const EdgeInsets.only(right: 8),
+                                                  child: CachedNetworkImage(
+                                                    imageUrl: materialUrl,
+                                                    fit: BoxFit.contain,
+                                                    placeholder: (context, url) =>
+                                                        const Center(child: CircularProgressIndicator()),
+                                                    errorWidget: (context, url, error) =>
+                                                        const Icon(Icons.error),
+                                                  ),
+                                                ),
+                                              );
+                                            }
+                                          }
+
+                                          content = Container(
+                                            width: barWidth,
+                                            height: barHeight,
+                                            decoration: BoxDecoration(
+                                              color: Colors.white,
+                                              border: Border.all(
+                                                color: isSelected ? Colors.blue : Colors.grey[400]!,
+                                                width: isSelected ? (3 / currentZoom) : (2 / currentZoom),
+                                              ),
+                                              borderRadius: BorderRadius.circular(8 / currentZoom),
+                                              boxShadow: [
+                                                BoxShadow(
+                                                  color: Colors.black.withOpacity(0.1),
+                                                  blurRadius: 4 / currentZoom,
+                                                  offset: Offset(0, 2 / currentZoom),
+                                                ),
+                                              ],
+                                            ),
+                                            child: pictograms.isEmpty
+                                                ? Center(
+                                                    child: Text(
+                                                      'Doble clic para añadir pictogramas',
+                                                      style: TextStyle(
+                                                        fontSize: 12,
+                                                        color: Colors.grey[600],
+                                                      ),
+                                                    ),
+                                                  )
+                                                : Padding(
+                                                    padding: const EdgeInsets.all(10),
+                                                    child: Row(
+                                                      mainAxisAlignment: MainAxisAlignment.start,
+                                                      children: pictograms,
+                                                    ),
+                                                  ),
+                                          );
+                                        } else {
+                                          final double scaledWidth =
+                                              (canvasElement.width ?? 150.0) * canvasElement.scale;
+                                          final double? scaledHeight = canvasElement.height != null
+                                              ? canvasElement.height! * canvasElement.scale
+                                              : null;
+                                          Widget imageWidget = const SizedBox();
+                                          if (canvasElement.type ==
+                                              CanvasElementType.networkImage) {
+                                            imageWidget = CachedNetworkImage(
                                               imageUrl: canvasElement.imageUrl!,
                                               fit: BoxFit.contain,
                                               placeholder: (context, url) =>
-                                                  const Center(
-                                                    child:
-                                                        CircularProgressIndicator(),
-                                                  ),
-                                              errorWidget:
-                                                  (context, url, error) =>
+                                                  const Center(child: CircularProgressIndicator()),
+                                              errorWidget: (context, url, error) => const Icon(Icons.error),
+                                            );
+                                          } else if (canvasElement.type ==
+                                              CanvasElementType.localImage) {
+                                            if (kIsWeb) {
+                                              if (canvasElement.webBytes != null) {
+                                                imageWidget = Image.memory(
+                                                  canvasElement.webBytes!,
+                                                  fit: BoxFit.contain,
+                                                  errorBuilder: (context, error, stackTrace) =>
                                                       const Icon(Icons.error),
-                                            ),
-                                          ),
-                                        ),
-                                      );
-                                    } else {
-                                      final scaledWidth =
-                                          (canvasElement.width ?? 150) *
-                                          canvasElement.scale;
-                                      final scaledHeight =
-                                          canvasElement.height != null
-                                          ? canvasElement.height! *
-                                                canvasElement.scale
-                                          : null;
-                                      Widget imageWidget;
-
-                                      if (canvasElement.type ==
-                                          CanvasElementType.networkImage) {
-                                        imageWidget = CachedNetworkImage(
-                                          imageUrl: canvasElement.imageUrl!,
-                                          placeholder: (context, url) =>
-                                              const Center(
-                                                child:
-                                                    CircularProgressIndicator(),
+                                                );
+                                              } else {
+                                                imageWidget = const Center(
+                                                  child: Text(
+                                                    'Imagen local no soportada en web',
+                                                    style: TextStyle(fontSize: 10),
+                                                  ),
+                                                );
+                                              }
+                                            } else {
+                                              imageWidget = Image.file(
+                                                File(canvasElement.imagePath!),
+                                                fit: BoxFit.contain,
+                                                errorBuilder: (context, error, stackTrace) =>
+                                                    const Icon(Icons.error),
+                                              );
+                                            }
+                                          }
+                                          if (scaledHeight == null) {
+                                            content = Container(
+                                              width: scaledWidth,
+                                              decoration: BoxDecoration(
+                                                border: isSelected
+                                                    ? Border.all(color: Colors.blue, width: borderWidth)
+                                                    : null,
                                               ),
-                                          errorWidget: (context, url, error) =>
-                                              const Icon(Icons.error),
-                                          fit: BoxFit.contain,
-                                        );
-                                      } else {
-                                        if (kIsWeb) {
-                                          if (canvasElement.webBytes != null) {
-                                            imageWidget = Image.memory(
-                                              canvasElement.webBytes!,
-                                              fit: BoxFit.contain,
-                                              errorBuilder:
-                                                  (
-                                                    context,
-                                                    error,
-                                                    stackTrace,
-                                                  ) => const Icon(Icons.error),
+                                              child: Transform(
+                                                alignment: Alignment.center,
+                                                transform: Matrix4.diagonal3Values(
+                                                  canvasElement.flipHorizontal ? -1.0 : 1.0,
+                                                  canvasElement.flipVertical ? -1.0 : 1.0,
+                                                  1.0,
+                                                ),
+                                                child: imageWidget,
+                                              ),
                                             );
                                           } else {
-                                            imageWidget = const Center(
-                                              child: Text(
-                                                'Imagen local no soportada en web',
-                                                style: TextStyle(fontSize: 10),
+                                            content = SizedBox(
+                                              width: scaledWidth,
+                                              height: scaledHeight,
+                                              child: Stack(
+                                                fit: StackFit.expand,
+                                                children: [
+                                                  Transform(
+                                                    alignment: Alignment.center,
+                                                    transform: Matrix4.diagonal3Values(
+                                                      canvasElement.flipHorizontal ? -1.0 : 1.0,
+                                                      canvasElement.flipVertical ? -1.0 : 1.0,
+                                                      1.0,
+                                                    ),
+                                                    child: imageWidget,
+                                                  ),
+                                                  if (isSelected)
+                                                    IgnorePointer(
+                                                      child: Container(
+                                                        decoration: BoxDecoration(
+                                                          border: Border.all(
+                                                            color: Colors.blue,
+                                                            width: borderWidth,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ),
+                                                ],
                                               ),
                                             );
                                           }
-                                        } else {
-                                          imageWidget = Image.file(
-                                            File(canvasElement.imagePath!),
-                                            fit: BoxFit.contain,
-                                            errorBuilder:
-                                                (context, error, stackTrace) =>
-                                                    const Icon(Icons.error),
+                                        }
+                                        if (isSelected && _selectedImageIds.length == 1) {
+                                          content = Stack(
+                                            clipBehavior: Clip.none,
+                                            children: [
+                                              content,
+                                              Positioned.fill(
+                                                child: IgnorePointer(
+                                                  ignoring: false,
+                                                  child: LayoutBuilder(
+                                                    builder: (context, constraints) {
+                                                      final elementWidth = constraints.maxWidth;
+                                                      final elementHeight = constraints.maxHeight;
+                                                      return Stack(
+                                                        clipBehavior: Clip.none,
+                                                        children: [
+                                                          _buildResizeHandle(
+                                                            Alignment.topLeft,
+                                                            canvasElement.id,
+                                                            elementWidth,
+                                                            elementHeight,
+                                                          ),
+                                                          _buildResizeHandle(
+                                                            Alignment.topRight,
+                                                            canvasElement.id,
+                                                            elementWidth,
+                                                            elementHeight,
+                                                          ),
+                                                          _buildResizeHandle(
+                                                            Alignment.bottomLeft,
+                                                            canvasElement.id,
+                                                            elementWidth,
+                                                            elementHeight,
+                                                          ),
+                                                          _buildResizeHandle(
+                                                            Alignment.bottomRight,
+                                                            canvasElement.id,
+                                                            elementWidth,
+                                                            elementHeight,
+                                                          ),
+                                                          _buildResizeHandle(
+                                                            Alignment.centerLeft,
+                                                            canvasElement.id,
+                                                            elementWidth,
+                                                            elementHeight,
+                                                          ),
+                                                          _buildResizeHandle(
+                                                            Alignment.centerRight,
+                                                            canvasElement.id,
+                                                            elementWidth,
+                                                            elementHeight,
+                                                          ),
+                                                          if (canvasElement.type ==
+                                                                  CanvasElementType.networkImage ||
+                                                              canvasElement.type ==
+                                                                  CanvasElementType.localImage ||
+                                                              canvasElement.type ==
+                                                                  CanvasElementType.pictogramCard ||
+                                                              canvasElement.type ==
+                                                                  CanvasElementType.shape ||
+                                                              canvasElement.type ==
+                                                                  CanvasElementType.visualInstructionsBar)
+                                                            ...[
+                                                              _buildResizeHandle(
+                                                                Alignment.topCenter,
+                                                                canvasElement.id,
+                                                                elementWidth,
+                                                                elementHeight,
+                                                              ),
+                                                              _buildResizeHandle(
+                                                                Alignment.bottomCenter,
+                                                                canvasElement.id,
+                                                                elementWidth,
+                                                                elementHeight,
+                                                              ),
+                                                            ],
+                                                        ],
+                                                      );
+                                                    },
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
                                           );
                                         }
-                                      }
-
-                                      // Si solo tenemos width (láminas), usar Container sin height fijo
-                                      if (scaledHeight == null) {
-                                        content = Container(
-                                          width: scaledWidth,
-                                          decoration: BoxDecoration(
-                                            border: isSelected
-                                                ? Border.all(
-                                                    color: Colors.blue,
-                                                    width: 2,
-                                                  )
-                                                : null,
-                                          ),
-                                          child: Transform(
-                                            alignment: Alignment.center,
-                                            transform: Matrix4.diagonal3Values(
-                                              canvasElement.flipHorizontal
-                                                  ? -1.0
-                                                  : 1.0,
-                                              canvasElement.flipVertical
-                                                  ? -1.0
-                                                  : 1.0,
-                                              1.0,
+                                        return Positioned(
+                                          left: canvasElement.position.dx,
+                                          top: canvasElement.position.dy,
+                                          child: GestureDetector(
+                                            onPanUpdate: (details) {
+                                              _updateImagePosition(
+                                                canvasElement.id,
+                                                details.delta,
+                                              );
+                                            },
+                                            onTap: () {
+                                              final isMultiSelectKey =
+                                                  HardwareKeyboard.instance.isMetaPressed ||
+                                                      HardwareKeyboard.instance.isControlPressed;
+                                              if (isMultiSelectKey) {
+                                                _toggleSelection(canvasElement.id);
+                                              } else {
+                                                _selectImage(canvasElement.id);
+                                              }
+                                            },
+                                            onDoubleTap: () {
+                                              if (canvasElement.type == CanvasElementType.visualInstructionsBar) {
+                                                _showEditVisualInstructionsDialog(canvasElement.id);
+                                              }
+                                            },
+                                            onLongPress: () {
+                                              _selectImage(canvasElement.id);
+                                            },
+                                            child: Transform.rotate(
+                                              angle: canvasElement.rotation,
+                                              child: content,
                                             ),
-                                            child: imageWidget,
                                           ),
                                         );
-                                      } else {
-                                        // Si tenemos width y height, usar SizedBox con dimensiones fijas
-                                        content = SizedBox(
-                                          width: scaledWidth,
-                                          height: scaledHeight,
-                                          child: Stack(
-                                            fit: StackFit.expand,
+                                      }),
+                                      if ((_headerController.text.trim().isNotEmpty ||
+                                              _footerController.text.trim().isNotEmpty) &&
+                                          (_shouldRenderHeaderFooter(_headerScope, _currentPage) ||
+                                              _shouldRenderHeaderFooter(_footerScope, _currentPage)))
+                                        Positioned(
+                                          left: 20,
+                                          right: 20,
+                                          top: 10,
+                                          child: Column(
+                                            mainAxisSize: MainAxisSize.min,
                                             children: [
-                                              Transform(
-                                                alignment: Alignment.center,
-                                                transform:
-                                                    Matrix4.diagonal3Values(
-                                                      canvasElement
-                                                              .flipHorizontal
-                                                          ? -1.0
-                                                          : 1.0,
-                                                      canvasElement.flipVertical
-                                                          ? -1.0
-                                                          : 1.0,
-                                                      1.0,
-                                                    ),
-                                                child: imageWidget,
-                                              ),
-                                              if (isSelected)
-                                                IgnorePointer(
-                                                  child: Container(
-                                                    decoration: BoxDecoration(
-                                                      border: Border.all(
-                                                        color: Colors.blue,
-                                                        width: 2,
-                                                      ),
-                                                    ),
+                                              if (_headerController.text.trim().isNotEmpty &&
+                                                  _shouldRenderHeaderFooter(_headerScope, _currentPage))
+                                                Text(
+                                                  _headerController.text,
+                                                  style: const TextStyle(
+                                                    fontSize: 16,
+                                                    fontWeight: FontWeight.bold,
                                                   ),
+                                                  textAlign: TextAlign.center,
+                                                ),
+                                              if (_headerController.text.trim().isNotEmpty &&
+                                                  _footerController.text.trim().isNotEmpty &&
+                                                  _shouldRenderHeaderFooter(_headerScope, _currentPage) &&
+                                                  _shouldRenderHeaderFooter(_footerScope, _currentPage))
+                                                const SizedBox(height: 4),
+                                              if (_footerController.text.trim().isNotEmpty &&
+                                                  _shouldRenderHeaderFooter(_footerScope, _currentPage))
+                                                Text(
+                                                  _footerController.text,
+                                                  style: const TextStyle(
+                                                    fontSize: 12,
+                                                    color: Colors.black87,
+                                                  ),
+                                                  textAlign: TextAlign.center,
                                                 ),
                                             ],
                                           ),
-                                        );
-                                      }
-                                    }
-
-                                    // Solo mostrar resize handles si hay exactamente 1 elemento seleccionado
-                                    if (isSelected &&
-                                        _selectedImageIds.length == 1) {
-                                      content = Stack(
-                                        clipBehavior: Clip.none,
-                                        children: [
-                                          content,
-                                          // Usar LayoutBuilder para obtener dimensiones reales del contenido
-                                          Positioned.fill(
-                                            child: IgnorePointer(
-                                              ignoring: false,
-                                              child: LayoutBuilder(
-                                                builder: (context, constraints) {
-                                                  final elementWidth = constraints.maxWidth;
-                                                  final elementHeight = constraints.maxHeight;
-
-                                                  return Stack(
-                                                    clipBehavior: Clip.none,
-                                                    children: [
-                                                      // Esquinas (para todos los tipos)
-                                                      _buildResizeHandle(
-                                                        Alignment.topLeft,
-                                                        canvasElement.id,
-                                                        elementWidth,
-                                                        elementHeight,
-                                                      ),
-                                                      _buildResizeHandle(
-                                                        Alignment.topRight,
-                                                        canvasElement.id,
-                                                        elementWidth,
-                                                        elementHeight,
-                                                      ),
-                                                      _buildResizeHandle(
-                                                        Alignment.bottomLeft,
-                                                        canvasElement.id,
-                                                        elementWidth,
-                                                        elementHeight,
-                                                      ),
-                                                      _buildResizeHandle(
-                                                        Alignment.bottomRight,
-                                                        canvasElement.id,
-                                                        elementWidth,
-                                                        elementHeight,
-                                                      ),
-                                                      // Laterales horizontales (para todos)
-                                                      _buildResizeHandle(
-                                                        Alignment.centerLeft,
-                                                        canvasElement.id,
-                                                        elementWidth,
-                                                        elementHeight,
-                                                      ),
-                                                      _buildResizeHandle(
-                                                        Alignment.centerRight,
-                                                        canvasElement.id,
-                                                        elementWidth,
-                                                        elementHeight,
-                                                      ),
-                                                      // Laterales verticales (solo para formas e imágenes, NO para texto)
-                                                      if (canvasElement.type != CanvasElementType.text) ...[
-                                                        _buildResizeHandle(
-                                                          Alignment.topCenter,
-                                                          canvasElement.id,
-                                                          elementWidth,
-                                                          elementHeight,
-                                                        ),
-                                                        _buildResizeHandle(
-                                                          Alignment.bottomCenter,
-                                                          canvasElement.id,
-                                                          elementWidth,
-                                                          elementHeight,
-                                                        ),
-                                                      ],
-                                                    ],
-                                                  );
-                                                },
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      );
-                                    }
-
-                                    return Positioned(
-                                      left: canvasElement.position.dx,
-                                      top: canvasElement.position.dy,
-                                      child: GestureDetector(
-                                        onPanUpdate: (details) {
-                                          _updateImagePosition(
-                                            canvasElement.id,
-                                            details.delta,
-                                          );
-                                        },
-                                        onTap: () {
-                                          // Detectar si se está presionando Cmd (macOS) o Ctrl (Windows/Linux)
-                                          final isMultiSelectKey =
-                                              HardwareKeyboard
-                                                  .instance
-                                                  .isMetaPressed ||
-                                              HardwareKeyboard
-                                                  .instance
-                                                  .isControlPressed;
-
-                                          if (isMultiSelectKey) {
-                                            _toggleSelection(canvasElement.id);
-                                          } else {
-                                            _selectImage(canvasElement.id);
-                                          }
-                                        },
-                                        child: Transform.rotate(
-                                          angle: canvasElement.rotation,
-                                          child: content,
                                         ),
-                                      ),
-                                    );
-                                  }),
-                                  // Logo (en web solo si es URL accesible)
-                                  if (_logoPath != null)
-                                    Positioned(
-                                      left: _logoPosition.dx,
-                                      top: _logoPosition.dy,
-                                      child: GestureDetector(
-                                        onPanUpdate: (details) {
-                                          setState(() {
-                                            _logoPosition +=
-                                                details.delta /
-                                                (_viewScale == 0
-                                                    ? 1
-                                                    : _viewScale);
-                                          });
-                                        },
-                                        child: Container(
-                                          width: _logoSize,
-                                          height: _logoSize,
-                                          decoration: BoxDecoration(
-                                            border: Border.all(
-                                              color: Colors.blue.withOpacity(
-                                                0.3,
-                                              ),
-                                              width: 1,
-                                            ),
-                                          ),
-                                          child: _buildLogoWidget(),
-                                        ),
-                                      ),
-                                    ),
-                                  // Encabezado
-                                  if (_headerController.text
-                                          .trim()
-                                          .isNotEmpty &&
-                                      _shouldRenderHeaderFooter(
-                                        _headerScope,
-                                        _currentPage,
-                                      ))
-                                    Positioned(
-                                      left: 20,
-                                      right: 20,
-                                      top: 10,
-                                      child: Text(
-                                        _headerController.text,
-                                        style: const TextStyle(
-                                          fontSize: 14,
-                                          color: Colors.black87,
-                                        ),
-                                        textAlign: TextAlign.center,
-                                      ),
-                                    ),
-                                  // Pie de página
-                                  if (_footerController.text
-                                          .trim()
-                                          .isNotEmpty &&
-                                      _shouldRenderHeaderFooter(
-                                        _footerScope,
-                                        _currentPage,
-                                      ))
-                                    Positioned(
-                                      left: 20,
-                                      right: 20,
-                                      bottom: 10,
-                                      child: Text(
-                                        _footerController.text,
-                                        style: const TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.black87,
-                                        ),
-                                        textAlign: TextAlign.center,
-                                      ),
-                                    ),
-                                  // Número de página
-                                  if (_showPageNumbers)
-                                    Positioned(
-                                      bottom: 10,
-                                      right: 20,
-                                      child: Text(
-                                        'Página ${_currentPage + 1} de ${_pages.length}',
-                                        style: const TextStyle(
-                                          fontSize: 10,
-                                          color: Colors.black54,
-                                        ),
-                                      ),
-                                    ),
-                                  // Crédito ARASAAC vertical en el lateral izquierdo
-                                  if (_showArasaacCredit)
-                                    Positioned(
-                                      left: 6,
-                                      top: 0,
-                                      child: SizedBox(
-                                        height: baseHeight,
-                                        child: RotatedBox(
-                                          quarterTurns: 3,
+                                      // Pie de página del documento (autor, licencia, etc.)
+                                      if (_documentFooterController.text.trim().isNotEmpty)
+                                        Positioned(
+                                          bottom: 10,
+                                          left: 20,
+                                          right: _showPageNumbers ? 120 : 20,
                                           child: Text(
-                                            _arasaacCredit,
+                                            _documentFooterController.text,
                                             style: const TextStyle(
                                               fontSize: 8,
                                               color: Colors.black54,
                                             ),
+                                            textAlign: TextAlign.center,
                                           ),
                                         ),
-                                      ),
-                                    ),
-                                  if (_showSoyVisualCredit)
-                                    Positioned(
-                                      right: 6,
-                                      top: 0,
-                                      child: SizedBox(
-                                        height: baseHeight,
-                                        child: RotatedBox(
-                                          quarterTurns: 3,
+                                      if (_showPageNumbers)
+                                        Positioned(
+                                          bottom: 10,
+                                          right: 20,
                                           child: Text(
-                                            _soyVisualCredit,
+                                            'Página ${_currentPage + 1} de ${_pages.length}',
                                             style: const TextStyle(
-                                              fontSize: 8,
+                                              fontSize: 10,
                                               color: Colors.black54,
                                             ),
                                           ),
                                         ),
-                                      ),
-                                    ),
-                                ],
+                                      if (_showArasaacCredit)
+                                        Positioned(
+                                          left: 10,
+                                          top: 0,
+                                          child: SizedBox(
+                                            height: baseHeight,
+                                            child: RotatedBox(
+                                              quarterTurns: 3,
+                                              child: SizedBox(
+                                                width: baseHeight - 20,
+                                                child: Text(
+                                                  _arasaacCredit,
+                                                  style: const TextStyle(
+                                                    fontSize: 8,
+                                                    color: Colors.black54,
+                                                  ),
+                                                  textAlign: TextAlign.center,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      if (_showSoyVisualCredit)
+                                        Positioned(
+                                          right: 10,
+                                          top: 0,
+                                          child: SizedBox(
+                                            height: baseHeight,
+                                            child: RotatedBox(
+                                              quarterTurns: 3,
+                                              child: SizedBox(
+                                                width: baseHeight - 20,
+                                                child: Text(
+                                                  _soyVisualCredit,
+                                                  style: const TextStyle(
+                                                    fontSize: 8,
+                                                    color: Colors.black54,
+                                                  ),
+                                                  textAlign: TextAlign.center,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ),
                               ),
-                            ),
-                          ),
                         );
                       },
                     ),
                   ),
                   Positioned(
-                    top: 20,
+                    bottom: 20,
                     left: 0,
                     right: 0,
                     child: Center(
@@ -4703,7 +5492,7 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
                   ),
                   if (_selectedImageIds.length == 1)
                     Positioned(
-                      bottom: 20,
+                      bottom: 100,
                       right: 20,
                       child: GestureDetector(
                         onPanUpdate: (details) {
@@ -4719,8 +5508,14 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
                             child: Builder(
                               builder: (context) {
                                 final selectedId = _selectedImageIds.first;
-                                final selectedElement = _canvasImages
-                                    .firstWhere((e) => e.id == selectedId);
+                                final selectedElement = _canvasImages.firstWhere(
+                                  (e) => e.id == selectedId,
+                                  orElse: () => CanvasImage(
+                                    id: selectedId,
+                                    type: CanvasElementType.text,
+                                    position: Offset.zero,
+                                  ),
+                                );
                                 return Column(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
@@ -5087,7 +5882,66 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
         );
       case SidebarMode.photo:
         return const Center(child: Text('Foto'));
+      case SidebarMode.visualInstructions:
+        return _buildVisualInstructionsPanel();
     }
+  }
+
+  Widget _buildVisualInstructionsPanel() {
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Instrucciones Visuales',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            'Añade una barra con pictogramas de actividad y materiales necesarios.',
+            style: TextStyle(fontSize: 14, color: Colors.black54),
+          ),
+          const SizedBox(height: 24),
+          ElevatedButton.icon(
+            onPressed: _addVisualInstructionsBar,
+            icon: const Icon(Icons.add),
+            label: const Text('Añadir barra de instrucciones'),
+            style: ElevatedButton.styleFrom(
+              minimumSize: const Size(double.infinity, 48),
+            ),
+          ),
+          const SizedBox(height: 16),
+          const Divider(),
+          const SizedBox(height: 8),
+          const Text(
+            '💡 Consejo:',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            '• Arrastra la barra para posicionarla donde quieras\n'
+            '• Haz doble clic para editar pictogramas\n'
+            '• Selecciónala y pulsa Supr para eliminarla',
+            style: TextStyle(fontSize: 12, color: Colors.black54),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _addVisualInstructionsBar() {
+    final newBar = CanvasImage.visualInstructionsBar(
+      id: _generateId(),
+      position: const Offset(100, 100), // Posición inicial
+      activityPictogramUrl: null,
+      materialPictogramUrls: [],
+    );
+
+    setState(() {
+      _canvasImages.add(newBar);
+      _saveToHistory();
+    });
   }
 
   Widget _buildConfigPanel() {
@@ -5108,22 +5962,10 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
                 spacing: 10,
                 children: [
                   ChoiceChip(
-                    label: const Text('Fondo'),
-                    selected: _configTab == ConfigTab.background,
+                    label: const Text('Página'),
+                    selected: _configTab == ConfigTab.page,
                     onSelected: (_) =>
-                        setState(() => _configTab = ConfigTab.background),
-                  ),
-                  ChoiceChip(
-                    label: const Text('Numerar'),
-                    selected: _configTab == ConfigTab.pagination,
-                    onSelected: (_) =>
-                        setState(() => _configTab = ConfigTab.pagination),
-                  ),
-                  ChoiceChip(
-                    label: const Text('Encabezado'),
-                    selected: _configTab == ConfigTab.headerFooter,
-                    onSelected: (_) =>
-                        setState(() => _configTab = ConfigTab.headerFooter),
+                        setState(() => _configTab = ConfigTab.page),
                   ),
                   ChoiceChip(
                     label: const Text('ARASAAC'),
@@ -5148,12 +5990,17 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
 
   Widget _buildConfigContent() {
     switch (_configTab) {
-      case ConfigTab.background:
+      case ConfigTab.page:
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Orientación de página',
+              'Página',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Orientación',
               style: TextStyle(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
@@ -5168,7 +6015,7 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
                     },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: !_pageOrientations[_currentPage]
-                          ? Colors.blue[700]
+                          ? const Color(0xFF6A1B9A)
                           : null,
                       foregroundColor: !_pageOrientations[_currentPage]
                           ? Colors.white
@@ -5204,7 +6051,7 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
                     },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: _pageOrientations[_currentPage]
-                          ? Colors.blue[700]
+                          ? const Color(0xFF6A1B9A)
                           : null,
                       foregroundColor: _pageOrientations[_currentPage]
                           ? Colors.white
@@ -5311,51 +6158,65 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
                 _buildBgColorButton(Colors.pink[50]!),
               ],
             ),
-          ],
-        );
-      case ConfigTab.pagination:
-        return SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          title: const Text('Mostrar número de página en PDF'),
-          value: _showPageNumbers,
-          onChanged: (value) {
-            setState(() {
-              _showPageNumbers = value;
-            });
-          },
-        );
-      case ConfigTab.headerFooter:
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+            const SizedBox(height: 16),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Mostrar número de página en PDF'),
+              value: _showPageNumbers,
+              onChanged: (value) {
+                setState(() {
+                  _showPageNumbers = value;
+                });
+              },
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Título e Instrucciones de la Página Actual',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+            ),
+            const SizedBox(height: 8),
             TextField(
               controller: _headerController,
               decoration: const InputDecoration(
-                labelText: 'Texto de encabezado',
+                labelText: 'Título de la página',
+                hintText: 'Ej: RELACIONAR SOMBRAS',
                 border: OutlineInputBorder(),
               ),
               onChanged: (_) => setState(() {}),
             ),
             const SizedBox(height: 12),
-            _buildScopeSelector(
-              label: 'Aplicar encabezado en',
-              value: _headerScope,
-              onChanged: (scope) => setState(() => _headerScope = scope),
-            ),
-            const SizedBox(height: 16),
             TextField(
               controller: _footerController,
               decoration: const InputDecoration(
-                labelText: 'Texto de pie de página',
+                labelText: 'Instrucciones de la página',
+                hintText: 'Ej: Relaciona cada imagen con su sombra',
                 border: OutlineInputBorder(),
               ),
+              maxLines: 2,
               onChanged: (_) => setState(() {}),
             ),
-            const SizedBox(height: 12),
-            _buildScopeSelector(
-              label: 'Aplicar pie en',
-              value: _footerScope,
-              onChanged: (scope) => setState(() => _footerScope = scope),
+            const SizedBox(height: 16),
+            const Divider(),
+            const SizedBox(height: 16),
+            const Text(
+              'Pie de Página del Documento',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Aparece en todas las páginas (autor, licencia, etc.)',
+              style: TextStyle(fontSize: 12, color: Colors.black54),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _documentFooterController,
+              decoration: const InputDecoration(
+                labelText: 'Pie de página del documento',
+                hintText: 'Ej: Material creado por... bajo licencia CC BY-NC-SA',
+                border: OutlineInputBorder(),
+              ),
+              maxLines: 2,
+              onChanged: (_) => setState(() {}),
             ),
           ],
         );
@@ -5580,42 +6441,6 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
     );
   }
 
-  Widget _buildScopeSelector({
-    required String label,
-    required HeaderFooterScope value,
-    required ValueChanged<HeaderFooterScope> onChanged,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          children: HeaderFooterScope.values.map((scope) {
-            String text;
-            switch (scope) {
-              case HeaderFooterScope.all:
-                text = 'Todas';
-                break;
-              case HeaderFooterScope.first:
-                text = 'Primera';
-                break;
-              case HeaderFooterScope.last:
-                text = 'Última';
-                break;
-            }
-            return ChoiceChip(
-              label: Text(text),
-              selected: value == scope,
-              onSelected: (_) => onChanged(scope),
-            );
-          }).toList(),
-        ),
-      ],
-    );
-  }
-
   Widget _buildTextInputPanel() {
     final TextEditingController textController = TextEditingController();
 
@@ -5701,7 +6526,14 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
 
   Widget _buildTextEditorPanel() {
     final selectedId = _selectedImageIds.first;
-    final selectedElement = _canvasImages.firstWhere((e) => e.id == selectedId);
+    final selectedElement = _canvasImages.firstWhere(
+      (e) => e.id == selectedId,
+      orElse: () => CanvasImage(
+        id: selectedId,
+        type: CanvasElementType.text,
+        position: Offset.zero,
+      ),
+    );
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -5734,8 +6566,12 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
                   icon: const Icon(Icons.format_bold),
                   label: const Text('Negrita'),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: selectedElement.isBold ? Colors.blue : Colors.grey[300],
-                    foregroundColor: selectedElement.isBold ? Colors.white : Colors.black,
+                    backgroundColor: selectedElement.isBold
+                        ? Colors.blue
+                        : Colors.grey[300],
+                    foregroundColor: selectedElement.isBold
+                        ? Colors.white
+                        : Colors.black,
                   ),
                 ),
               ),
@@ -5746,8 +6582,12 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
                   icon: const Icon(Icons.format_italic),
                   label: const Text('Cursiva'),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: selectedElement.isItalic ? Colors.blue : Colors.grey[300],
-                    foregroundColor: selectedElement.isItalic ? Colors.white : Colors.black,
+                    backgroundColor: selectedElement.isItalic
+                        ? Colors.blue
+                        : Colors.grey[300],
+                    foregroundColor: selectedElement.isItalic
+                        ? Colors.white
+                        : Colors.black,
                   ),
                 ),
               ),
@@ -5759,8 +6599,12 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
             icon: const Icon(Icons.format_underline),
             label: const Text('Subrayado'),
             style: ElevatedButton.styleFrom(
-              backgroundColor: selectedElement.isUnderline ? Colors.blue : Colors.grey[300],
-              foregroundColor: selectedElement.isUnderline ? Colors.white : Colors.black,
+              backgroundColor: selectedElement.isUnderline
+                  ? Colors.blue
+                  : Colors.grey[300],
+              foregroundColor: selectedElement.isUnderline
+                  ? Colors.white
+                  : Colors.black,
             ),
           ),
           const SizedBox(height: 16),
@@ -5775,15 +6619,24 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
             items: const [
               DropdownMenuItem(
                 value: 'ColeCarreira',
-                child: Text('Cole Carreira', style: TextStyle(fontFamily: 'ColeCarreira')),
+                child: Text(
+                  'Cole Carreira',
+                  style: TextStyle(fontFamily: 'ColeCarreira'),
+                ),
               ),
               DropdownMenuItem(
                 value: 'EscolarG',
-                child: Text('Escolar G', style: TextStyle(fontFamily: 'EscolarG')),
+                child: Text(
+                  'Escolar G',
+                  style: TextStyle(fontFamily: 'EscolarG'),
+                ),
               ),
               DropdownMenuItem(
                 value: 'EscolarP',
-                child: Text('Escolar P', style: TextStyle(fontFamily: 'EscolarP')),
+                child: Text(
+                  'Escolar P',
+                  style: TextStyle(fontFamily: 'EscolarP'),
+                ),
               ),
               DropdownMenuItem(
                 value: 'Trace',
@@ -5791,7 +6644,10 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
               ),
               DropdownMenuItem(
                 value: 'Massallera',
-                child: Text('Massallera', style: TextStyle(fontFamily: 'Massallera')),
+                child: Text(
+                  'Massallera',
+                  style: TextStyle(fontFamily: 'Massallera'),
+                ),
               ),
               DropdownMenuItem(value: 'Roboto', child: Text('Roboto')),
               DropdownMenuItem(value: 'Arial', child: Text('Arial')),
@@ -5948,7 +6804,16 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
     );
   }
 
-  Widget _buildResizeHandle(Alignment alignment, String id, double elementWidth, double elementHeight) {
+  Widget _buildResizeHandle(
+    Alignment alignment,
+    String id,
+    double elementWidth,
+    double elementHeight,
+  ) {
+    // Obtener el zoom actual para compensar el tamaño de los handles
+    final currentZoom = _transformationController.value.getMaxScaleOnAxis();
+    final zoomCompensation = 1.0 / currentZoom;
+
     // Determinar el tipo de manejador según el alignment
     final bool isCorner = alignment.x != 0 && alignment.y != 0;
     final bool isHorizontal = alignment.y == 0 && alignment.x != 0;
@@ -5960,78 +6825,80 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
 
     if (isCorner) {
       // Esquinas: círculo para redimensionamiento proporcional
-      handleWidth = 14;
-      handleHeight = 14;
+      // Compensar por el zoom para que siempre se vean del mismo tamaño
+      handleWidth = 14 * zoomCompensation;
+      handleHeight = 14 * zoomCompensation;
       handleWidget = Container(
         width: handleWidth,
         height: handleHeight,
         decoration: BoxDecoration(
           color: Colors.white,
-          border: Border.all(color: Colors.blue, width: 2),
+          border: Border.all(color: Colors.blue, width: 2 * zoomCompensation),
           shape: BoxShape.circle,
         ),
       );
     } else if (isHorizontal) {
       // Laterales horizontales: rectángulo vertical para ajuste de ancho
-      handleWidth = 8;
-      handleHeight = 20;
+      handleWidth = 8 * zoomCompensation;
+      handleHeight = 20 * zoomCompensation;
       handleWidget = Container(
         width: handleWidth,
         height: handleHeight,
         decoration: BoxDecoration(
           color: Colors.white,
-          border: Border.all(color: Colors.blue, width: 2),
-          borderRadius: BorderRadius.circular(2),
+          border: Border.all(color: Colors.blue, width: 2 * zoomCompensation),
+          borderRadius: BorderRadius.circular(2 * zoomCompensation),
         ),
       );
     } else if (isVertical) {
       // Laterales verticales: rectángulo horizontal para ajuste de alto
-      handleWidth = 20;
-      handleHeight = 8;
+      handleWidth = 20 * zoomCompensation;
+      handleHeight = 8 * zoomCompensation;
       handleWidget = Container(
         width: handleWidth,
         height: handleHeight,
         decoration: BoxDecoration(
           color: Colors.white,
-          border: Border.all(color: Colors.blue, width: 2),
-          borderRadius: BorderRadius.circular(2),
+          border: Border.all(color: Colors.blue, width: 2 * zoomCompensation),
+          borderRadius: BorderRadius.circular(2 * zoomCompensation),
         ),
       );
     } else {
       // Fallback
-      handleWidth = 14;
-      handleHeight = 14;
+      handleWidth = 14 * zoomCompensation;
+      handleHeight = 14 * zoomCompensation;
       handleWidget = Container(
         width: handleWidth,
         height: handleHeight,
         decoration: BoxDecoration(
           color: Colors.white,
-          border: Border.all(color: Colors.blue, width: 2),
+          border: Border.all(color: Colors.blue, width: 2 * zoomCompensation),
           shape: BoxShape.circle,
         ),
       );
     }
 
     // Calcular posición basada en el alignment y el tamaño del elemento
+    // Los handles se posicionan DENTRO del borde del objeto
     double left = 0;
     double top = 0;
 
-    // Posición horizontal
+    // Posición horizontal (dentro del borde)
     if (alignment.x == -1) {
-      left = -handleWidth / 2;
+      left = 0; // Completamente dentro, pegado al borde izquierdo
     } else if (alignment.x == 0) {
       left = (elementWidth - handleWidth) / 2;
     } else if (alignment.x == 1) {
-      left = elementWidth - handleWidth / 2;
+      left = elementWidth - handleWidth; // Completamente dentro, pegado al borde derecho
     }
 
-    // Posición vertical
+    // Posición vertical (dentro del borde)
     if (alignment.y == -1) {
-      top = -handleHeight / 2;
+      top = 0; // Completamente dentro, pegado al borde superior
     } else if (alignment.y == 0) {
       top = (elementHeight - handleHeight) / 2;
     } else if (alignment.y == 1) {
-      top = elementHeight - handleHeight / 2;
+      top = elementHeight - handleHeight; // Completamente dentro, pegado al borde inferior
     }
 
     return Positioned(
@@ -6848,20 +7715,29 @@ class ShapePainter extends CustomPainter {
 
           if (size.width == 0) {
             // Línea vertical discontinua
-            _drawDashedVerticalLine(canvas, size.height, paint, dashWidth, dashSpace);
+            _drawDashedVerticalLine(
+              canvas,
+              size.height,
+              paint,
+              dashWidth,
+              dashSpace,
+            );
           } else {
             // Línea horizontal discontinua
-            _drawDashedHorizontalLine(canvas, size.width, size.height, paint, dashWidth, dashSpace);
+            _drawDashedHorizontalLine(
+              canvas,
+              size.width,
+              size.height,
+              paint,
+              dashWidth,
+              dashSpace,
+            );
           }
         } else {
           // Líneas continuas
           if (size.width == 0) {
             // Línea vertical
-            canvas.drawLine(
-              Offset(0, 0),
-              Offset(0, size.height),
-              paint,
-            );
+            canvas.drawLine(Offset(0, 0), Offset(0, size.height), paint);
           } else {
             // Línea horizontal (comportamiento por defecto)
             canvas.drawLine(
@@ -6903,15 +7779,56 @@ class ShapePainter extends CustomPainter {
     }
   }
 
-  void _drawDashedRect(Canvas canvas, Size size, Paint paint, double dashWidth, double dashSpace) {
+  void _drawDashedRect(
+    Canvas canvas,
+    Size size,
+    Paint paint,
+    double dashWidth,
+    double dashSpace,
+  ) {
     // Dibujar los 4 lados del rectángulo con líneas discontinuas
-    _drawDashedLine(canvas, Offset(0, 0), Offset(size.width, 0), paint, dashWidth, dashSpace); // Top
-    _drawDashedLine(canvas, Offset(size.width, 0), Offset(size.width, size.height), paint, dashWidth, dashSpace); // Right
-    _drawDashedLine(canvas, Offset(size.width, size.height), Offset(0, size.height), paint, dashWidth, dashSpace); // Bottom
-    _drawDashedLine(canvas, Offset(0, size.height), Offset(0, 0), paint, dashWidth, dashSpace); // Left
+    _drawDashedLine(
+      canvas,
+      Offset(0, 0),
+      Offset(size.width, 0),
+      paint,
+      dashWidth,
+      dashSpace,
+    ); // Top
+    _drawDashedLine(
+      canvas,
+      Offset(size.width, 0),
+      Offset(size.width, size.height),
+      paint,
+      dashWidth,
+      dashSpace,
+    ); // Right
+    _drawDashedLine(
+      canvas,
+      Offset(size.width, size.height),
+      Offset(0, size.height),
+      paint,
+      dashWidth,
+      dashSpace,
+    ); // Bottom
+    _drawDashedLine(
+      canvas,
+      Offset(0, size.height),
+      Offset(0, 0),
+      paint,
+      dashWidth,
+      dashSpace,
+    ); // Left
   }
 
-  void _drawDashedLine(Canvas canvas, Offset start, Offset end, Paint paint, double dashWidth, double dashSpace) {
+  void _drawDashedLine(
+    Canvas canvas,
+    Offset start,
+    Offset end,
+    Paint paint,
+    double dashWidth,
+    double dashSpace,
+  ) {
     final totalDistance = (end - start).distance;
     final dashCount = (totalDistance / (dashWidth + dashSpace)).floor();
 
@@ -6926,13 +7843,40 @@ class ShapePainter extends CustomPainter {
     }
   }
 
-  void _drawDashedHorizontalLine(Canvas canvas, double width, double height, Paint paint, double dashWidth, double dashSpace) {
+  void _drawDashedHorizontalLine(
+    Canvas canvas,
+    double width,
+    double height,
+    Paint paint,
+    double dashWidth,
+    double dashSpace,
+  ) {
     final y = height / 2;
-    _drawDashedLine(canvas, Offset(0, y), Offset(width, y), paint, dashWidth, dashSpace);
+    _drawDashedLine(
+      canvas,
+      Offset(0, y),
+      Offset(width, y),
+      paint,
+      dashWidth,
+      dashSpace,
+    );
   }
 
-  void _drawDashedVerticalLine(Canvas canvas, double height, Paint paint, double dashWidth, double dashSpace) {
-    _drawDashedLine(canvas, Offset(0, 0), Offset(0, height), paint, dashWidth, dashSpace);
+  void _drawDashedVerticalLine(
+    Canvas canvas,
+    double height,
+    Paint paint,
+    double dashWidth,
+    double dashSpace,
+  ) {
+    _drawDashedLine(
+      canvas,
+      Offset(0, 0),
+      Offset(0, height),
+      paint,
+      dashWidth,
+      dashSpace,
+    );
   }
 
   @override
@@ -6971,15 +7915,24 @@ class _PhonologicalAwarenessConfigDialogState
               items: const [
                 DropdownMenuItem(
                   value: 'ColeCarreira',
-                  child: Text('Cole Carreira', style: TextStyle(fontFamily: 'ColeCarreira')),
+                  child: Text(
+                    'Cole Carreira',
+                    style: TextStyle(fontFamily: 'ColeCarreira'),
+                  ),
                 ),
                 DropdownMenuItem(
                   value: 'EscolarG',
-                  child: Text('Escolar G', style: TextStyle(fontFamily: 'EscolarG')),
+                  child: Text(
+                    'Escolar G',
+                    style: TextStyle(fontFamily: 'EscolarG'),
+                  ),
                 ),
                 DropdownMenuItem(
                   value: 'EscolarP',
-                  child: Text('Escolar P', style: TextStyle(fontFamily: 'EscolarP')),
+                  child: Text(
+                    'Escolar P',
+                    style: TextStyle(fontFamily: 'EscolarP'),
+                  ),
                 ),
                 DropdownMenuItem(
                   value: 'Trace',
@@ -6987,11 +7940,17 @@ class _PhonologicalAwarenessConfigDialogState
                 ),
                 DropdownMenuItem(
                   value: 'Massallera',
-                  child: Text('Massallera', style: TextStyle(fontFamily: 'Massallera')),
+                  child: Text(
+                    'Massallera',
+                    style: TextStyle(fontFamily: 'Massallera'),
+                  ),
                 ),
                 DropdownMenuItem(
                   value: 'Roboto',
-                  child: Text('Roboto (Normal)', style: TextStyle(fontFamily: 'Roboto')),
+                  child: Text(
+                    'Roboto (Normal)',
+                    style: TextStyle(fontFamily: 'Roboto'),
+                  ),
                 ),
               ],
               onChanged: (value) {
@@ -7040,10 +7999,9 @@ class _PhonologicalAwarenessConfigDialogState
         ),
         ElevatedButton(
           onPressed: () {
-            Navigator.of(context).pop({
-              'fontFamily': _selectedFont,
-              'uppercase': _uppercase,
-            });
+            Navigator.of(
+              context,
+            ).pop({'fontFamily': _selectedFont, 'uppercase': _uppercase});
           },
           child: const Text('Generar'),
         ),
@@ -7101,10 +8059,7 @@ class _LabelSelectionDialogState extends State<_LabelSelectionDialog> {
                 ),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(6),
-                  child: Image.asset(
-                    label,
-                    fit: BoxFit.cover,
-                  ),
+                  child: Image.asset(label, fit: BoxFit.cover),
                 ),
               ),
             );

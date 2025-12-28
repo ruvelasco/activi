@@ -14,6 +14,8 @@ class ActivityType {
   final bool isHighlighted; // Destacar especialmente (ej: Pack de Actividades)
   final bool isEnabled; // Activar/desactivar
   final String? category; // Categoría opcional ("pack", "individual", etc.)
+  final String? activityPictogramUrl; // URL del pictograma de la actividad
+  final List<String>? materialPictogramUrls; // URLs de pictogramas de materiales
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -30,6 +32,8 @@ class ActivityType {
     this.isHighlighted = false,
     this.isEnabled = true,
     this.category,
+    this.activityPictogramUrl,
+    this.materialPictogramUrls,
     DateTime? createdAt,
     DateTime? updatedAt,
   })  : createdAt = createdAt ?? DateTime.now(),
@@ -76,6 +80,8 @@ class ActivityType {
     bool? isHighlighted,
     bool? isEnabled,
     String? category,
+    String? activityPictogramUrl,
+    List<String>? materialPictogramUrls,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -92,6 +98,8 @@ class ActivityType {
       isHighlighted: isHighlighted ?? this.isHighlighted,
       isEnabled: isEnabled ?? this.isEnabled,
       category: category ?? this.category,
+      activityPictogramUrl: activityPictogramUrl ?? this.activityPictogramUrl,
+      materialPictogramUrls: materialPictogramUrls ?? this.materialPictogramUrls,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -111,6 +119,8 @@ class ActivityType {
       'isHighlighted': isHighlighted,
       'isEnabled': isEnabled,
       'category': category,
+      'activityPictogramUrl': activityPictogramUrl,
+      'materialPictogramUrls': materialPictogramUrls,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
     };
@@ -130,6 +140,10 @@ class ActivityType {
       isHighlighted: json['isHighlighted'] as bool? ?? false,
       isEnabled: json['isEnabled'] as bool? ?? true,
       category: json['category'] as String?,
+      activityPictogramUrl: json['activityPictogramUrl'] as String?,
+      materialPictogramUrls: (json['materialPictogramUrls'] as List<dynamic>?)
+          ?.map((e) => e as String)
+          .toList(),
       createdAt: json['createdAt'] != null
           ? DateTime.parse(json['createdAt'] as String)
           : DateTime.now(),

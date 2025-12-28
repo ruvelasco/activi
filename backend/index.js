@@ -57,6 +57,8 @@ app.post('/migrations/run', async (req, res) => {
         is_highlighted BOOLEAN NOT NULL DEFAULT false,
         is_enabled BOOLEAN NOT NULL DEFAULT true,
         category TEXT,
+        activity_pictogram_url TEXT,
+        material_pictogram_urls TEXT[],
         created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT now()
       )
@@ -403,6 +405,8 @@ app.get('/activity-types', async (req, res) => {
       isHighlighted: row.is_highlighted,
       isEnabled: row.is_enabled,
       category: row.category,
+      activityPictogramUrl: row.activity_pictogram_url,
+      materialPictogramUrls: row.material_pictogram_urls,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     }));
@@ -441,6 +445,8 @@ app.get('/activity-types/name/:name', async (req, res) => {
       isHighlighted: row.is_highlighted,
       isEnabled: row.is_enabled,
       category: row.category,
+      activityPictogramUrl: row.activity_pictogram_url,
+      materialPictogramUrls: row.material_pictogram_urls,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
@@ -468,6 +474,8 @@ app.post('/activity-types', authMiddleware, async (req, res) => {
       isHighlighted,
       isEnabled,
       category,
+      activityPictogramUrl,
+      materialPictogramUrls,
     } = req.body || {};
 
     if (!name || !title) {
@@ -480,8 +488,9 @@ app.post('/activity-types', authMiddleware, async (req, res) => {
       `INSERT INTO activity_type (
         id, name, title, description, info_tooltip,
         icon_name, color_value, "order", is_new,
-        is_highlighted, is_enabled, category
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        is_highlighted, is_enabled, category,
+        activity_pictogram_url, material_pictogram_urls
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
       RETURNING *`,
       [
         activityId,
@@ -496,6 +505,8 @@ app.post('/activity-types', authMiddleware, async (req, res) => {
         isHighlighted || false,
         isEnabled !== undefined ? isEnabled : true,
         category,
+        activityPictogramUrl,
+        materialPictogramUrls,
       ]
     );
 
@@ -513,6 +524,8 @@ app.post('/activity-types', authMiddleware, async (req, res) => {
       isHighlighted: row.is_highlighted,
       isEnabled: row.is_enabled,
       category: row.category,
+      activityPictogramUrl: row.activity_pictogram_url,
+      materialPictogramUrls: row.material_pictogram_urls,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
@@ -544,6 +557,8 @@ app.put('/activity-types/:id', authMiddleware, async (req, res) => {
       isHighlighted,
       isEnabled,
       category,
+      activityPictogramUrl,
+      materialPictogramUrls,
     } = req.body || {};
 
     const { rows } = await pool.query(
@@ -558,7 +573,9 @@ app.put('/activity-types/:id', authMiddleware, async (req, res) => {
         is_new = COALESCE($9, is_new),
         is_highlighted = COALESCE($10, is_highlighted),
         is_enabled = COALESCE($11, is_enabled),
-        category = COALESCE($12, category),
+        category = $12,
+        activity_pictogram_url = $13,
+        material_pictogram_urls = $14,
         updated_at = now()
       WHERE id = $1
       RETURNING *`,
@@ -575,6 +592,8 @@ app.put('/activity-types/:id', authMiddleware, async (req, res) => {
         isHighlighted,
         isEnabled,
         category,
+        activityPictogramUrl,
+        materialPictogramUrls,
       ]
     );
 
@@ -596,6 +615,8 @@ app.put('/activity-types/:id', authMiddleware, async (req, res) => {
       isHighlighted: row.is_highlighted,
       isEnabled: row.is_enabled,
       category: row.category,
+      activityPictogramUrl: row.activity_pictogram_url,
+      materialPictogramUrls: row.material_pictogram_urls,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };

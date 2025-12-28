@@ -118,18 +118,31 @@ class ActivityTypeService {
         return false;
       }
 
+      final activityJson = activity.copyWith(updatedAt: DateTime.now()).toJson();
+
+      // Debug: ver qué se envía al backend
+      print('=== DEBUG SERVICE: Enviando al backend:');
+      print('  activityPictogramUrl: ${activityJson['activityPictogramUrl']}');
+      print('  materialPictogramUrls: ${activityJson['materialPictogramUrls']}');
+
       final response = await http.put(
         Uri.parse('$_apiBaseUrl/activity-types/${activity.id}'),
         headers: {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',
         },
-        body: json.encode(
-          activity.copyWith(updatedAt: DateTime.now()).toJson(),
-        ),
+        body: json.encode(activityJson),
       );
 
+      print('=== DEBUG SERVICE: Respuesta del backend (${response.statusCode}):');
+      print('  Body: ${response.body}');
+
       if (response.statusCode == 200) {
+        // Parsear y verificar la respuesta
+        final responseData = json.decode(response.body);
+        print('=== DEBUG SERVICE: Datos parseados:');
+        print('  activityPictogramUrl: ${responseData['activityPictogramUrl']}');
+        print('  materialPictogramUrls: ${responseData['materialPictogramUrls']}');
         return true;
       } else {
         lastError = 'Error al actualizar: ${response.body}';
