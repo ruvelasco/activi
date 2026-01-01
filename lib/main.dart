@@ -3145,6 +3145,15 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
     });
   }
 
+  void _updateTextAlign(String id, TextAlign alignment) {
+    setState(() {
+      final index = _pages[_currentPage].indexWhere((img) => img.id == id);
+      if (index != -1) {
+        _pages[_currentPage][index].textAlign = alignment;
+      }
+    });
+  }
+
   void _updateTextFontSize(String id, double newSize) {
     setState(() {
       final index = _pages[_currentPage].indexWhere((img) => img.id == id);
@@ -3193,6 +3202,135 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
     });
   }
 
+  /// Parsea texto con markdown y retorna TextSpan formateado (para Flutter)
+  TextSpan _parseMarkdownToTextSpan(String text, TextStyle baseStyle) {
+    final spans = <TextSpan>[];
+    final regex = RegExp(r'(\*\*|_|~)([^\*_~]+)\1');
+    int lastEnd = 0;
+
+    for (final match in regex.allMatches(text)) {
+      // Añadir texto antes del match
+      if (match.start > lastEnd) {
+        spans.add(TextSpan(
+          text: text.substring(lastEnd, match.start),
+          style: baseStyle,
+        ));
+      }
+
+      // Extraer el marcador y el texto
+      final marker = match.group(1);
+      final content = match.group(2) ?? '';
+
+      // Aplicar estilo según el marcador
+      TextStyle style = baseStyle;
+      if (marker == '**') {
+        style = baseStyle.copyWith(fontWeight: FontWeight.bold);
+      } else if (marker == '_') {
+        style = baseStyle.copyWith(fontStyle: FontStyle.italic);
+      } else if (marker == '~') {
+        style = baseStyle.copyWith(decoration: TextDecoration.underline);
+      }
+
+      spans.add(TextSpan(text: content, style: style));
+      lastEnd = match.end;
+    }
+
+    // Añadir texto restante
+    if (lastEnd < text.length) {
+      spans.add(TextSpan(
+        text: text.substring(lastEnd),
+        style: baseStyle,
+      ));
+    }
+
+    return TextSpan(children: spans.isNotEmpty ? spans : [TextSpan(text: text, style: baseStyle)]);
+  }
+
+  /// Parsea texto con markdown y retorna pw.TextSpan formateado (para PDF)
+  pw.TextSpan _parseMarkdownToPdfTextSpan(String text, pw.TextStyle baseStyle) {
+    final spans = <pw.TextSpan>[];
+    final regex = RegExp(r'(\*\*|_|~)([^\*_~]+)\1');
+    int lastEnd = 0;
+
+    for (final match in regex.allMatches(text)) {
+      // Añadir texto antes del match
+      if (match.start > lastEnd) {
+        spans.add(pw.TextSpan(
+          text: text.substring(lastEnd, match.start),
+          style: baseStyle,
+        ));
+      }
+
+      // Extraer el marcador y el texto
+      final marker = match.group(1);
+      final content = match.group(2) ?? '';
+
+      // Aplicar estilo según el marcador
+      pw.TextStyle style = baseStyle;
+      if (marker == '**') {
+        style = baseStyle.copyWith(fontWeight: pw.FontWeight.bold);
+      } else if (marker == '_') {
+        style = baseStyle.copyWith(fontStyle: pw.FontStyle.italic);
+      } else if (marker == '~') {
+        style = baseStyle.copyWith(decoration: pw.TextDecoration.underline);
+      }
+
+      spans.add(pw.TextSpan(text: content, style: style));
+      lastEnd = match.end;
+    }
+
+    // Añadir texto restante
+    if (lastEnd < text.length) {
+      spans.add(pw.TextSpan(
+        text: text.substring(lastEnd),
+        style: baseStyle,
+      ));
+    }
+
+    return pw.TextSpan(children: spans.isNotEmpty ? spans : [pw.TextSpan(text: text, style: baseStyle)]);
+  }
+
+  /// Aplica formato markdown al texto seleccionado en el TextEditingController
+  void _applySelectionFormat(TextEditingController controller, String id, String formatType) {
+    final selection = controller.selection;
+
+    // Si no hay selección, no hacer nada
+    if (!selection.isValid || selection.start == selection.end) {
+      return;
+    }
+
+    final text = controller.text;
+    final selectedText = selection.textInside(text);
+
+    // Aplicar el markup markdown según el tipo de formato
+    String formattedText;
+    switch (formatType) {
+      case 'bold':
+        formattedText = '**$selectedText**';
+        break;
+      case 'italic':
+        formattedText = '_${selectedText}_';
+        break;
+      case 'underline':
+        formattedText = '~$selectedText~';
+        break;
+      default:
+        formattedText = selectedText;
+    }
+
+    // Reconstruir el texto completo con la parte seleccionada formateada
+    final newText = text.replaceRange(selection.start, selection.end, formattedText);
+
+    // Actualizar el controller
+    controller.value = TextEditingValue(
+      text: newText,
+      selection: TextSelection.collapsed(offset: selection.start + formattedText.length),
+    );
+
+    // Actualizar el elemento en el canvas
+    _updateText(id, newText);
+  }
+
   void _updateShapeColor(String id, Color newColor) {
     setState(() {
       final index = _pages[_currentPage].indexWhere((img) => img.id == id);
@@ -3227,24 +3365,6 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
     });
   }
 
-  double _baseSizeFor(CanvasImage element) {
-    switch (element.type) {
-      case CanvasElementType.shape:
-        return element.width ?? 100.0;
-      case CanvasElementType.text:
-        return element.width ?? 300.0;
-      case CanvasElementType.networkImage:
-      case CanvasElementType.localImage:
-        return element.width ?? 150.0;
-      case CanvasElementType.pictogramCard:
-        return element.width ?? 150.0;
-      case CanvasElementType.shadow:
-        return element.width ?? 150.0;
-      case CanvasElementType.visualInstructionsBar:
-        return element.width ?? 400.0;
-    }
-  }
-
   void _resizeElement(String id, Offset delta, Alignment handle) {
     final index = _pages[_currentPage].indexWhere((img) => img.id == id);
     if (index == -1) return;
@@ -3263,25 +3383,56 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
       double newLeft = element.position.dx;
       double newTop = element.position.dy;
 
-      // Redimensionar ancho (si handle tiene componente x)
-      if (handle.x < 0) {
-        // Lado izquierdo: reducir ancho y mover posición
-        newWidth = (newWidth - adjustedDelta.dx).clamp(minSize, 1000.0);
-        newLeft += adjustedDelta.dx;
-      } else if (handle.x > 0) {
-        // Lado derecho: aumentar ancho
-        newWidth = (newWidth + adjustedDelta.dx).clamp(minSize, 1000.0);
-      }
+      // Detectar si es esquina (resize proporcional) o lado (resize unidireccional)
+      final isCorner = handle.x != 0 && handle.y != 0;
 
-      // Redimensionar alto (si handle tiene componente y y no es texto)
-      if (element.type == CanvasElementType.shape) {
-        if (handle.y < 0) {
-          // Lado superior: reducir alto y mover posición
-          newHeight = (newHeight - adjustedDelta.dy).clamp(minSize, 1000.0);
-          newTop += adjustedDelta.dy;
-        } else if (handle.y > 0) {
-          // Lado inferior: aumentar alto
-          newHeight = (newHeight + adjustedDelta.dy).clamp(minSize, 1000.0);
+      if (isCorner && element.type == CanvasElementType.shape) {
+        // ESQUINA: Resize proporcional manteniendo aspect ratio
+        final aspectRatio = newWidth / newHeight;
+
+        // Usar el delta promedio para mantener proporción
+        final avgDelta = (adjustedDelta.dx + adjustedDelta.dy) / 2;
+
+        if (handle.x < 0) {
+          // Esquina izquierda: reducir tamaño y mover posición
+          final widthChange = -avgDelta;
+          newWidth = (newWidth + widthChange).clamp(minSize, 1000.0);
+          newHeight = (newWidth / aspectRatio).clamp(minSize, 1000.0);
+          newLeft += (element.width! - newWidth);
+          if (handle.y < 0) {
+            newTop += (element.height! - newHeight);
+          }
+        } else {
+          // Esquina derecha: aumentar tamaño
+          newWidth = (newWidth + avgDelta).clamp(minSize, 1000.0);
+          newHeight = (newWidth / aspectRatio).clamp(minSize, 1000.0);
+          if (handle.y < 0) {
+            newTop += (element.height! - newHeight);
+          }
+        }
+      } else {
+        // LADO: Resize unidireccional (solo ancho O solo alto)
+
+        // Redimensionar ancho (si handle tiene componente x)
+        if (handle.x < 0) {
+          // Lado izquierdo: reducir ancho y mover posición
+          newWidth = (newWidth - adjustedDelta.dx).clamp(minSize, 1000.0);
+          newLeft += adjustedDelta.dx;
+        } else if (handle.x > 0) {
+          // Lado derecho: aumentar ancho
+          newWidth = (newWidth + adjustedDelta.dx).clamp(minSize, 1000.0);
+        }
+
+        // Redimensionar alto (si handle tiene componente y y no es texto)
+        if (element.type == CanvasElementType.shape) {
+          if (handle.y < 0) {
+            // Lado superior: reducir alto y mover posición
+            newHeight = (newHeight - adjustedDelta.dy).clamp(minSize, 1000.0);
+            newTop += adjustedDelta.dy;
+          } else if (handle.y > 0) {
+            // Lado inferior: aumentar alto
+            newHeight = (newHeight + adjustedDelta.dy).clamp(minSize, 1000.0);
+          }
         }
       }
 
@@ -3293,58 +3444,99 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
         _pages[_currentPage][index].position = Offset(newLeft, newTop);
       });
     } else {
-      // Para otros elementos (imágenes), usar el sistema de escala
-      // Determinar si es resize proporcional (esquinas) o unidireccional (laterales)
+      // Para otros elementos (imágenes)
       final isCorner = handle.x != 0 && handle.y != 0;
-      final base = _baseSizeFor(element);
 
-      if (isCorner) {
-        // Resize proporcional desde esquinas
-        final deltaScale = (adjustedDelta.dx + adjustedDelta.dy) / (2 * base);
-        setState(() {
-          final newScale = (element.scale + deltaScale).clamp(0.1, 5.0);
-          _pages[_currentPage][index].scale = newScale;
-        });
+      if (element.height == null) {
+        // Imagen con aspect ratio natural (height = null) - usar scale
+        final base = element.width ?? 150.0;
+
+        if (isCorner) {
+          // ESQUINA: Resize proporcional usando scale
+          final deltaScale = (adjustedDelta.dx + adjustedDelta.dy) / (2 * base);
+          setState(() {
+            final newScale = (element.scale + deltaScale).clamp(0.1, 5.0);
+            _pages[_currentPage][index].scale = newScale;
+          });
+        } else {
+          // LADO: Resize unidireccional - convertir a width/height explícitos
+          final minSize = 20.0;
+          final currentWidth = base * element.scale;
+
+          double newWidth = currentWidth;
+          double newLeft = element.position.dx;
+
+          if (handle.x != 0) {
+            if (handle.x < 0) {
+              newWidth = (currentWidth - adjustedDelta.dx).clamp(minSize, 2000.0);
+              newLeft += (currentWidth - newWidth);
+            } else {
+              newWidth = (currentWidth + adjustedDelta.dx).clamp(minSize, 2000.0);
+            }
+
+            setState(() {
+              _pages[_currentPage][index].width = newWidth;
+              _pages[_currentPage][index].scale = 1.0;
+              _pages[_currentPage][index].position = Offset(newLeft, element.position.dy);
+            });
+          }
+          // Si es handle vertical (y != 0), no hacer nada para mantener aspect ratio
+        }
       } else {
-        // Resize unidireccional desde laterales (solo ancho o solo alto)
-        final baseWidth = element.width ?? base;
-        final baseHeight = element.height ?? baseWidth;
+        // Imagen con width Y height definidos - resize directo
+        final minSize = 20.0;
+        final currentWidth = element.width! * element.scale;
+        final currentHeight = element.height! * element.scale;
 
-        final currentWidth = baseWidth * element.scale;
-        final currentHeight = baseHeight * element.scale;
         double newWidth = currentWidth;
         double newHeight = currentHeight;
         double newLeft = element.position.dx;
         double newTop = element.position.dy;
 
-        if (handle.x != 0) {
-          // Lateral horizontal - solo ajustar ancho
+        if (isCorner) {
+          // ESQUINA: Resize proporcional
+          final aspectRatio = currentWidth / currentHeight;
+          final avgDelta = (adjustedDelta.dx + adjustedDelta.dy) / 2;
+
           if (handle.x < 0) {
-            // Lado izquierdo: ajustar ancho y posición
-            final widthChange = -adjustedDelta.dx;
-            newWidth = (currentWidth + widthChange).clamp(20.0, 2000.0);
+            newWidth = (currentWidth - avgDelta).clamp(minSize, 2000.0);
+            newHeight = (newWidth / aspectRatio).clamp(minSize, 2000.0);
             newLeft += (currentWidth - newWidth);
+            if (handle.y < 0) {
+              newTop += (currentHeight - newHeight);
+            }
           } else {
-            // Lado derecho: solo ajustar ancho
-            newWidth = (currentWidth + adjustedDelta.dx).clamp(20.0, 2000.0);
+            newWidth = (currentWidth + avgDelta).clamp(minSize, 2000.0);
+            newHeight = (newWidth / aspectRatio).clamp(minSize, 2000.0);
+            if (handle.y < 0) {
+              newTop += (currentHeight - newHeight);
+            }
           }
-        }
-        if (handle.y != 0) {
-          // Lateral vertical - solo ajustar alto
-          if (handle.y < 0) {
-            // Lado superior: ajustar alto y posición
-            final heightChange = -adjustedDelta.dy;
-            newHeight = (currentHeight + heightChange).clamp(20.0, 2000.0);
-            newTop += (currentHeight - newHeight);
-          } else {
-            // Lado inferior: solo ajustar alto
-            newHeight = (currentHeight + adjustedDelta.dy).clamp(20.0, 2000.0);
+        } else {
+          // LADO: Resize unidireccional
+          if (handle.x != 0) {
+            if (handle.x < 0) {
+              newWidth = (currentWidth - adjustedDelta.dx).clamp(minSize, 2000.0);
+              newLeft += (currentWidth - newWidth);
+            } else {
+              newWidth = (currentWidth + adjustedDelta.dx).clamp(minSize, 2000.0);
+            }
+          }
+
+          if (handle.y != 0) {
+            if (handle.y < 0) {
+              newHeight = (currentHeight - adjustedDelta.dy).clamp(minSize, 2000.0);
+              newTop += (currentHeight - newHeight);
+            } else {
+              newHeight = (currentHeight + adjustedDelta.dy).clamp(minSize, 2000.0);
+            }
           }
         }
 
         setState(() {
-          _pages[_currentPage][index].width = newWidth / element.scale;
-          _pages[_currentPage][index].height = newHeight / element.scale;
+          _pages[_currentPage][index].width = newWidth;
+          _pages[_currentPage][index].height = newHeight;
+          _pages[_currentPage][index].scale = 1.0;
           _pages[_currentPage][index].position = Offset(newLeft, newTop);
         });
       }
@@ -4198,6 +4390,33 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
           if (element.type == CanvasElementType.text) {
             // Elemento de texto
             final textWidth = (element.width ?? 300.0) * element.scale;
+
+            // Estilo base para el PDF
+            final pdfBaseStyle = pw.TextStyle(
+              fontSize: element.fontSize,
+              color: PdfColor.fromInt(element.textColor.value),
+              fontWeight: element.isBold
+                  ? pw.FontWeight.bold
+                  : pw.FontWeight.normal,
+              fontStyle: element.isItalic
+                  ? pw.FontStyle.italic
+                  : pw.FontStyle.normal,
+              decoration: element.isUnderline
+                  ? pw.TextDecoration.underline
+                  : pw.TextDecoration.none,
+              font: element.fontFamily == 'ColeCarreira'
+                  ? coleCarreiraFont
+                  : element.fontFamily == 'EscolarG'
+                  ? escolarGFont
+                  : element.fontFamily == 'EscolarP'
+                  ? escolarPFont
+                  : element.fontFamily == 'Trace'
+                  ? traceFont
+                  : element.fontFamily == 'Massallera'
+                  ? massalleraFont
+                  : null,
+            );
+
             widgets.add(
               pw.Positioned(
                 left: element.position.dx,
@@ -4215,33 +4434,15 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
                     child: pw.Container(
                       width: textWidth,
                       padding: pw.EdgeInsets.zero,
-                      child: pw.Text(
-                        element.text ?? '',
-                        style: pw.TextStyle(
-                          fontSize: element.fontSize,
-                          color: PdfColor.fromInt(element.textColor.value),
-                          fontWeight: element.isBold
-                              ? pw.FontWeight.bold
-                              : pw.FontWeight.normal,
-                          fontStyle: element.isItalic
-                              ? pw.FontStyle.italic
-                              : pw.FontStyle.normal,
-                          decoration: element.isUnderline
-                              ? pw.TextDecoration.underline
-                              : pw.TextDecoration.none,
-                          font: element.fontFamily == 'ColeCarreira'
-                              ? coleCarreiraFont
-                              : element.fontFamily == 'EscolarG'
-                              ? escolarGFont
-                              : element.fontFamily == 'EscolarP'
-                              ? escolarPFont
-                              : element.fontFamily == 'Trace'
-                              ? traceFont
-                              : element.fontFamily == 'Massallera'
-                              ? massalleraFont
-                              : null,
-                        ),
-                        textAlign: pw.TextAlign.center,
+                      child: pw.RichText(
+                        text: _parseMarkdownToPdfTextSpan(element.text ?? '', pdfBaseStyle),
+                        textAlign: element.textAlign == TextAlign.left
+                            ? pw.TextAlign.left
+                            : element.textAlign == TextAlign.right
+                            ? pw.TextAlign.right
+                            : element.textAlign == TextAlign.justify
+                            ? pw.TextAlign.justify
+                            : pw.TextAlign.center,
                       ),
                     ),
                   ),
@@ -5119,6 +5320,23 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
                                         if (canvasElement.type == CanvasElementType.text) {
                                           final textWidth =
                                               (canvasElement.width ?? 300.0) * canvasElement.scale;
+
+                                          // Estilo base del texto
+                                          final baseStyle = TextStyle(
+                                            fontSize: canvasElement.fontSize,
+                                            color: canvasElement.textColor,
+                                            fontFamily: canvasElement.fontFamily,
+                                            fontWeight: canvasElement.isBold
+                                                ? FontWeight.bold
+                                                : FontWeight.normal,
+                                            fontStyle: canvasElement.isItalic
+                                                ? FontStyle.italic
+                                                : FontStyle.normal,
+                                            decoration: canvasElement.isUnderline
+                                                ? TextDecoration.underline
+                                                : TextDecoration.none,
+                                          );
+
                                           content = Container(
                                             width: textWidth,
                                             padding: EdgeInsets.zero,
@@ -5127,23 +5345,9 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
                                                   ? Border.all(color: Colors.blue, width: borderWidth)
                                                   : null,
                                             ),
-                                            child: Text(
-                                              canvasElement.text ?? '',
-                                              style: TextStyle(
-                                                fontSize: canvasElement.fontSize,
-                                                color: canvasElement.textColor,
-                                                fontFamily: canvasElement.fontFamily,
-                                                fontWeight: canvasElement.isBold
-                                                    ? FontWeight.bold
-                                                    : FontWeight.normal,
-                                                fontStyle: canvasElement.isItalic
-                                                    ? FontStyle.italic
-                                                    : FontStyle.normal,
-                                                decoration: canvasElement.isUnderline
-                                                    ? TextDecoration.underline
-                                                    : TextDecoration.none,
-                                              ),
-                                              textAlign: TextAlign.center,
+                                            child: Text.rich(
+                                              _parseMarkdownToTextSpan(canvasElement.text ?? '', baseStyle),
+                                              textAlign: canvasElement.textAlign,
                                             ),
                                           );
                                         } else if (canvasElement.type ==
@@ -6757,6 +6961,9 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
       ),
     );
 
+    // Controller local para manejar la selección de texto
+    final textController = TextEditingController(text: selectedElement.text);
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -6767,67 +6974,116 @@ class _ActivityCreatorPageState extends State<ActivityCreatorPage> {
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 16),
-          TextFormField(
-            key: ValueKey(selectedId),
-            initialValue: selectedElement.text,
+
+          // Barra de herramientas de formato (como Word)
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.grey[200],
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+              border: Border.all(color: Colors.grey[400]!),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Primera fila: Formato de texto
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.format_bold, size: 20),
+                      tooltip: 'Negrita (Ctrl+B)',
+                      padding: const EdgeInsets.all(8),
+                      constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                      onPressed: () => _applySelectionFormat(textController, selectedId, 'bold'),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.format_italic, size: 20),
+                      tooltip: 'Cursiva (Ctrl+I)',
+                      padding: const EdgeInsets.all(8),
+                      constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                      onPressed: () => _applySelectionFormat(textController, selectedId, 'italic'),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.format_underline, size: 20),
+                      tooltip: 'Subrayado (Ctrl+U)',
+                      padding: const EdgeInsets.all(8),
+                      constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                      onPressed: () => _applySelectionFormat(textController, selectedId, 'underline'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                // Segunda fila: Alineación
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.format_align_left, size: 20),
+                      tooltip: 'Alinear a la izquierda',
+                      padding: const EdgeInsets.all(8),
+                      constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                      style: IconButton.styleFrom(
+                        backgroundColor: selectedElement.textAlign == TextAlign.left
+                            ? Colors.blue.withOpacity(0.2)
+                            : null,
+                      ),
+                      onPressed: () => _updateTextAlign(selectedId, TextAlign.left),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.format_align_center, size: 20),
+                      tooltip: 'Centrar',
+                      padding: const EdgeInsets.all(8),
+                      constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                      style: IconButton.styleFrom(
+                        backgroundColor: selectedElement.textAlign == TextAlign.center
+                            ? Colors.blue.withOpacity(0.2)
+                            : null,
+                      ),
+                      onPressed: () => _updateTextAlign(selectedId, TextAlign.center),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.format_align_right, size: 20),
+                      tooltip: 'Alinear a la derecha',
+                      padding: const EdgeInsets.all(8),
+                      constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                      style: IconButton.styleFrom(
+                        backgroundColor: selectedElement.textAlign == TextAlign.right
+                            ? Colors.blue.withOpacity(0.2)
+                            : null,
+                      ),
+                      onPressed: () => _updateTextAlign(selectedId, TextAlign.right),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.format_align_justify, size: 20),
+                      tooltip: 'Justificar',
+                      padding: const EdgeInsets.all(8),
+                      constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                      style: IconButton.styleFrom(
+                        backgroundColor: selectedElement.textAlign == TextAlign.justify
+                            ? Colors.blue.withOpacity(0.2)
+                            : null,
+                      ),
+                      onPressed: () => _updateTextAlign(selectedId, TextAlign.justify),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+
+          // Campo de texto con selección
+          TextField(
+            controller: textController,
             decoration: const InputDecoration(
               labelText: 'Contenido',
-              border: OutlineInputBorder(),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.vertical(bottom: Radius.circular(4)),
+              ),
+              hintText: 'Selecciona texto y usa los botones para dar formato',
             ),
             maxLines: 5,
             onChanged: (value) => _updateText(selectedId, value),
-          ),
-          const SizedBox(height: 16),
-          const Text('Formato', style: TextStyle(fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: () => _toggleTextBold(selectedId),
-                  icon: const Icon(Icons.format_bold),
-                  label: const Text('Negrita'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: selectedElement.isBold
-                        ? Colors.blue
-                        : Colors.grey[300],
-                    foregroundColor: selectedElement.isBold
-                        ? Colors.white
-                        : Colors.black,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: () => _toggleTextItalic(selectedId),
-                  icon: const Icon(Icons.format_italic),
-                  label: const Text('Cursiva'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: selectedElement.isItalic
-                        ? Colors.blue
-                        : Colors.grey[300],
-                    foregroundColor: selectedElement.isItalic
-                        ? Colors.white
-                        : Colors.black,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          ElevatedButton.icon(
-            onPressed: () => _toggleTextUnderline(selectedId),
-            icon: const Icon(Icons.format_underline),
-            label: const Text('Subrayado'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: selectedElement.isUnderline
-                  ? Colors.blue
-                  : Colors.grey[300],
-              foregroundColor: selectedElement.isUnderline
-                  ? Colors.white
-                  : Colors.black,
-            ),
           ),
           const SizedBox(height: 16),
           const Text('Fuente', style: TextStyle(fontWeight: FontWeight.bold)),

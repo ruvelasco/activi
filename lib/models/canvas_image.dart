@@ -31,6 +31,7 @@ class CanvasImage {
   bool isBold; // Para text
   bool isItalic; // Para text
   bool isUnderline; // Para text
+  TextAlign textAlign; // Alineación del texto (left, center, right)
   final ShapeType? shapeType; // Para shape
   Color shapeColor; // Para shape
   double strokeWidth; // Para shape (grosor de línea)
@@ -62,6 +63,7 @@ class CanvasImage {
     this.isBold = false,
     this.isItalic = false,
     this.isUnderline = false,
+    this.textAlign = TextAlign.center,
     this.shapeType,
     this.shapeColor = Colors.black,
     this.strokeWidth = 2.0,
@@ -250,6 +252,7 @@ class CanvasImage {
     bool? isBold,
     bool? isItalic,
     bool? isUnderline,
+    TextAlign? textAlign,
     ShapeType? shapeType,
     Color? shapeColor,
     double? strokeWidth,
@@ -279,6 +282,7 @@ class CanvasImage {
       isBold: isBold ?? this.isBold,
       isItalic: isItalic ?? this.isItalic,
       isUnderline: isUnderline ?? this.isUnderline,
+      textAlign: textAlign ?? this.textAlign,
       shapeType: shapeType ?? this.shapeType,
       shapeColor: shapeColor ?? this.shapeColor,
       strokeWidth: strokeWidth ?? this.strokeWidth,
